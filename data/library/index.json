@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "tracks": [
+    {
+      "id": "yt_m7tR2IJg8yg",
+      "version": 1,
+      "title": "Old Svalich Road | Unofficial Curse of Strahd Soundtrack | 1h TTRPG Dark Background Music | Loop",
+      "type": "music",
+      "volume": 0.7,
+      "audioPath": "library/downloaded/m7tR2IJg8yg.mp3",
+      "thumbnailPath": "library/thumbnails/m7tR2IJg8yg.jpg",
+      "source": {
+        "type": "youtube",
+        "youtubeId": "m7tR2IJg8yg",
+        "url": "https://youtu.be/m7tR2IJg8yg"
+      },
+      "missing": false
+    },
+    {
+      "id": "yt_khcPHuoNIBI",
+      "version": 1,
+      "title": "Exploring Castle Ravenloft | Unofficial Curse of Strahd Soundtrack | 1h Dark Background Music | Loop",
+      "type": "music",
+      "volume": 0.7,
+      "audioPath": "library/downloaded/khcPHuoNIBI.mp3",
+      "thumbnailPath": "library/thumbnails/khcPHuoNIBI.jpg",
+      "source": {
+        "type": "youtube",
+        "youtubeId": "khcPHuoNIBI",
+        "url": "https://youtu.be/khcPHuoNIBI"
+      },
+      "missing": false
+    },
+    {
+      "id": "yt_eJBNsf4ScXU",
+      "version": 1,
+      "title": "Bats, Rats and Vermin | Unofficial Curse of Strahd Soundtrack | 1h Combat Music | Loop",
+      "type": "music",
+      "volume": 0.7,
+      "audioPath": "library/downloaded/eJBNsf4ScXU.mp3",
+      "thumbnailPath": "library/thumbnails/eJBNsf4ScXU.jpg",
+      "source": {
+        "type": "youtube",
+        "youtubeId": "eJBNsf4ScXU",
+        "url": "https://youtu.be/eJBNsf4ScXU"
+      },
+      "missing": false
+    },
+    {
+      "id": "yt_Gbut7lFzEgA",
+      "version": 1,
+      "title": "Strahd Battle Theme | Unofficial Curse of Strahd Soundtrack | 1h D&D BBEG Battle Music | Loop",
+      "type": "music",
+      "volume": 0.7,
+      "audioPath": "library/downloaded/Gbut7lFzEgA.mp3",
+      "thumbnailPath": "library/thumbnails/Gbut7lFzEgA.jpg",
+      "source": {
+        "type": "youtube",
+        "youtubeId": "Gbut7lFzEgA",
+        "url": "https://youtu.be/Gbut7lFzEgA"
+      },
+      "missing": false
+    },
+    {
+      "id": "yt_sZ7scQLXVns",
+      "version": 1,
+      "title": "DOOM FOREVER | HEAVIEST HITTING & BEST DOOM MIX FOR INTENSE WORKOUT",
+      "type": "music",
+      "volume": 0.7,
+      "audioPath": "library/downloaded/sZ7scQLXVns.mp3",
+      "thumbnailPath": "library/thumbnails/sZ7scQLXVns.jpg",
+      "source": {
+        "type": "youtube",
+        "youtubeId": "sZ7scQLXVns",
+        "url": "https://youtu.be/sZ7scQLXVns"
+      },
+      "missing": false
+    },
+    {
+      "id": "yt_PbzHTtH8jHk",
+      "version": 1,
+      "title": "FREE - Seamless Audio Loop of a Campfire Burning + Download link, Copyright Free! (ULTRA HD)",
+      "type": "ambience",
+      "volume": 0.7,
+      "audioPath": "library/downloaded/PbzHTtH8jHk.mp3",
+      "thumbnailPath": "library/thumbnails/PbzHTtH8jHk.jpg",
+      "source": {
+        "type": "youtube",
+        "youtubeId": "PbzHTtH8jHk",
+        "url": "https://www.youtube.com/watch?v=PbzHTtH8jHk"
+      },
+      "missing": false
+    },
+    {
+      "id": "yt_SMILHbbADJw",
+      "version": 1,
+      "title": "Explosion Sound Effect",
+      "type": "oneshot",
+      "volume": 0.7,
+      "audioPath": "library/downloaded/SMILHbbADJw.mp3",
+      "thumbnailPath": "library/thumbnails/SMILHbbADJw.jpg",
+      "source": {
+        "type": "youtube",
+        "youtubeId": "SMILHbbADJw",
+        "url": "https://www.youtube.com/watch?v=SMILHbbADJw"
+      }
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "masterVolume": 0.73,
+  "musicTransition": "crossfade",
+  "transitionDuration": 3000
+}

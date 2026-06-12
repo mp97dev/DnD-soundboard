@@ -1,0 +1,60 @@
+:root {
+  --bg: #14161c;
+  --bg-panel: #1c1f27;
+  --bg-raised: #252933;
+  --border: #323845;
+  --text: #e8e6e0;
+  --text-dim: #8b8f9a;
+  --music: #3b82f6;      /* blu: musica attiva */
+  --ambience: #22c55e;   /* verde: ambience attiva */
+  --oneshot: #f59e0b;    /* ambra: flash one-shot */
+  --danger: #ef4444;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #app {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, 'Segoe UI', sans-serif;
+  font-size: 16px;
+  user-select: none;
+}
+
+button {
+  font-family: inherit;
+  font-size: 15px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 10px 16px;
+}
+button:hover { border-color: var(--text-dim); }
+button.primary { background: var(--music); border-color: var(--music); }
+button.danger { background: transparent; border-color: var(--danger); color: var(--danger); }
+
+input, select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-family: inherit;
+  font-size: 15px;
+}
+input:focus, select:focus, button:focus-visible {
+  outline: 2px solid var(--music);
+  outline-offset: 1px;
+}
+
+input[type='range'] { accent-color: var(--music); padding: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

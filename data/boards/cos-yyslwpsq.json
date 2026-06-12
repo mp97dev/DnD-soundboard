@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "id": "cos-yyslwpsq",
+  "name": "CoS",
+  "rows": 8,
+  "cols": 12,
+  "buttons": [
+    {
+      "id": "b69q399o",
+      "label": "Svalich road",
+      "trackId": "yt_m7tR2IJg8yg",
+      "row": 1,
+      "col": 1,
+      "rowSpan": 1,
+      "colSpan": 2
+    },
+    {
+      "id": "y17gjhk8",
+      "label": "Ravenloft",
+      "trackId": "yt_khcPHuoNIBI",
+      "row": 1,
+      "col": 3,
+      "rowSpan": 1,
+      "colSpan": 2
+    },
+    {
+      "id": "qlxjnm43",
+      "label": "Fight Ravenloft",
+      "trackId": "yt_eJBNsf4ScXU",
+      "row": 2,
+      "col": 1,
+      "rowSpan": 1,
+      "colSpan": 2
+    },
+    {
+      "id": "aclabp8e",
+      "label": "Final Battle Strahd",
+      "trackId": "yt_Gbut7lFzEgA",
+      "row": 2,
+      "col": 3,
+      "rowSpan": 1,
+      "colSpan": 2
+    },
+    {
+      "id": "iu4t95zq",
+      "label": "DOOM",
+      "trackId": "yt_sZ7scQLXVns",
+      "row": 2,
+      "col": 11,
+      "rowSpan": 1,
+      "colSpan": 2
+    },
+    {
+      "id": "glf4puzg",
+      "label": "Campfire",
+      "trackId": "yt_PbzHTtH8jHk",
+      "row": 5,
+      "col": 1,
+      "rowSpan": 1,
+      "colSpan": 2
+    },
+    {
+      "id": "ra14kvdw",
+      "label": "Explosion Sound Effect",
+      "trackId": "yt_SMILHbbADJw",
+      "row": 8,
+      "col": 1,
+      "rowSpan": 1,
+      "colSpan": 1
+    }
+  ]
+}

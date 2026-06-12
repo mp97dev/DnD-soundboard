@@ -1,0 +1,7 @@
+node_modules/
+dist/
+bin/
+test-results/
+playwright-report/
+*.mp3
+*.jpg

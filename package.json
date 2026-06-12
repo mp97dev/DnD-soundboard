@@ -1,0 +1,69 @@
+{
+  "name": "dnd-soundboard",
+  "version": "0.1.0",
+  "description": "Local-first soundboard for tabletop RPG sessions",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "fetch:ytdlp": "bash scripts/fetch-ytdlp.sh",
+    "fetch:ytdlp:win": "bash scripts/fetch-ytdlp.sh --win",
+    "fetch:ffmpeg:win": "bash scripts/fetch-ffmpeg.sh",
+    "build": "npm run fetch:ytdlp:win && npm run fetch:ffmpeg:win && vite build && electron-builder --win",
+    "build:linux": "npm run fetch:ytdlp && vite build && electron-builder --linux",
+    "build:mac": "npm run fetch:ytdlp && vite build && electron-builder --mac",
+    "build:renderer": "vite build",
+    "test:e2e": "vite build && npx playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@vitejs/plugin-vue": "^6.0.0",
+    "concurrently": "^10.0.0",
+    "cross-env": "^7.0.3",
+    "electron": "^42.0.0",
+    "electron-builder": "^26.6.0",
+    "vite": "^7.0.0",
+    "wait-on": "^8.0.0"
+  },
+  "dependencies": {
+    "pinia": "^2.2.0",
+    "vue": "^3.4.0"
+  },
+  "build": {
+    "appId": "com.dnd.soundboard",
+    "files": [
+      "dist/renderer/**",
+      "electron/**"
+    ],
+    "directories": {
+      "output": "dist/release"
+    },
+    "win": {
+      "target": [{ "target": "dir" }],
+      "extraResources": [
+        {
+          "from": "bin",
+          "to": "bin",
+          "filter": ["yt-dlp.exe", "ffmpeg.exe", "ffprobe.exe"]
+        }
+      ]
+    },
+    "linux": {
+      "extraResources": [
+        {
+          "from": "bin",
+          "to": "bin",
+          "filter": ["yt-dlp"]
+        }
+      ]
+    },
+    "mac": {
+      "extraResources": [
+        {
+          "from": "bin",
+          "to": "bin",
+          "filter": ["yt-dlp"]
+        }
+      ]
+    }
+  }
+}
