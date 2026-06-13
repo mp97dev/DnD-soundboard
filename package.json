@@ -35,7 +35,7 @@
       "electron/**"
     ],
     "directories": {
-      "output": "dist/release"
+      "output": "dist/out"
     },
     "win": {
       "target": [{ "target": "dir" }],
