@@ -22,9 +22,14 @@ contextBridge.exposeInMainWorld('api', {
     get: () => invoke('settings:get'),
     save: (s) => invoke('settings:save', s)
   },
+  config: {
+    export: () => invoke('config:export'),
+    import: () => invoke('config:import')
+  },
   ytdlp: {
-    download: (url) => invoke('ytdlp:download', url),
-    redownload: (track) => invoke('ytdlp:redownload', track),
+    expand: (text) => invoke('ytdlp:expand', text),
+    download: (url, jobId) => invoke('ytdlp:download', { url, jobId }),
+    redownload: (track, jobId) => invoke('ytdlp:redownload', { track, jobId }),
     onProgress: (cb) => {
       const listener = (_e, p) => cb(p)
       ipcRenderer.on('ytdlp:progress', listener)

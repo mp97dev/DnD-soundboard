@@ -66,6 +66,40 @@ function extractYoutubeId(url) {
   return m ? m[1] : null
 }
 
+// Espande un blocco di testo (URL/playlist separati da spazi, virgole o a
+// capo) nella lista di video da scaricare. Le playlist (list=...) vengono
+// risolte con --flat-playlist; i singoli video non toccano la rete qui.
+async function expandUrls(text) {
+  const tokens = String(text || '')
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+  const out = []
+  const seen = new Set()
+  const push = (entry) => {
+    if (entry.ytId) {
+      if (seen.has(entry.ytId)) return
+      seen.add(entry.ytId)
+    }
+    out.push(entry)
+  }
+
+  for (const tok of tokens) {
+    if (/[?&]list=/.test(tok)) {
+      const json = JSON.parse(await run([...baseArgs(), '--flat-playlist', '-J', tok]))
+      for (const en of json.entries || []) {
+        const id = en.id || null
+        const url = en.url || (id ? `https://youtu.be/${id}` : tok)
+        push({ url, ytId: id, title: en.title || id || url })
+      }
+    } else {
+      push({ url: tok, ytId: extractYoutubeId(tok), title: tok })
+    }
+  }
+  return out
+}
+
 async function downloadTrack(url, onProgress = () => {}) {
   const ytId = extractYoutubeId(url)
   if (!ytId) throw new Error('URL YouTube non valido')
@@ -122,13 +156,20 @@ async function downloadTrack(url, onProgress = () => {}) {
 }
 
 module.exports = function registerYtdlpIpc() {
-  ipcMain.handle('ytdlp:download', (e, url) =>
-    downloadTrack(url, (p) => e.sender.send('ytdlp:progress', p))
+  // Espansione playlist / lista di URL (per il download in blocco)
+  ipcMain.handle('ytdlp:expand', (_e, text) => expandUrls(text))
+
+  // jobId: instrada gli eventi di progresso al job giusto nel renderer,
+  // così più download possono procedere in parallelo
+  ipcMain.handle('ytdlp:download', (e, { url, jobId } = {}) =>
+    downloadTrack(url, (p) => e.sender.send('ytdlp:progress', { jobId, ...p }))
   )
 
   // Ri-download automatico per file mancanti (al caricamento board)
-  ipcMain.handle('ytdlp:redownload', (_e, track) => {
+  ipcMain.handle('ytdlp:redownload', (e, { track, jobId } = {}) => {
     if (track?.source?.type !== 'youtube') throw new Error('Non è una traccia YouTube')
-    return downloadTrack(track.source.url)
+    return downloadTrack(track.source.url, (p) =>
+      e.sender.send('ytdlp:progress', { jobId, ...p })
+    )
   })
 }

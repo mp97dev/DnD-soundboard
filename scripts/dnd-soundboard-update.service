@@ -1,0 +1,13 @@
+[Unit]
+Description=Aggiorna DnD Soundboard dal repo git
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=APP_DIR=@APP_DIR@
+Environment=REPO_URL=@REPO_URL@
+Environment=BRANCH=@BRANCH@
+Environment=APP_USER=@APP_USER@
+Environment=SERVICE=dnd-soundboard
+ExecStart=@APP_DIR@/scripts/update.sh

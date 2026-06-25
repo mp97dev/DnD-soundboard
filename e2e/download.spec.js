@@ -1,25 +1,24 @@
 const { test, expect } = require('@playwright/test')
 const { launchApp, createBoard } = require('./helpers')
 
+const YT_PLACEHOLDER = 'URL o playlist YouTube'
+
 test('download YouTube: progresso visibile e traccia in libreria', async () => {
   const { app, page } = await launchApp()
   await createBoard(page, 'Test')
   await page.getByRole('button', { name: /Edit/ }).click()
 
-  await page.getByPlaceholder('URL YouTube').fill('https://youtu.be/dQw4w9WgXcQ')
-  const dlButton = page.getByRole('button', { name: 'Scarica audio da YouTube' })
-  await dlButton.click()
+  await page.getByPlaceholder(YT_PLACEHOLDER).fill('https://youtu.be/dQw4w9WgXcQ')
+  await page.getByRole('button', { name: 'Scarica audio da YouTube' }).click()
 
-  // Durante il download: bottone disabilitato, status con fase e percentuale
-  await expect(dlButton).toBeDisabled()
-  await expect(page.locator('.dl-status')).toBeVisible()
-  await expect(page.locator('.dl-pct')).toHaveText(/\d+%/)
+  // Durante il download: un job con fase e percentuale
+  await expect(page.locator('.job')).toBeVisible()
+  await expect(page.locator('.job-pct')).toHaveText(/\d+%/)
 
-  // A fine download: traccia in libreria, status sparito, nessun errore
+  // A fine download: traccia in libreria, job sparito, nessun errore
   await expect(page.locator('.track .title')).toHaveText('Test Track', { timeout: 20_000 })
-  await expect(page.locator('.dl-status')).toHaveCount(0)
+  await expect(page.locator('.job')).toHaveCount(0)
   await expect(page.locator('.error')).toHaveCount(0)
-  await expect(dlButton).toBeEnabled()
 
   // Regressione CORS: l'audio engine carica i file via fetch(media://),
   // cross-origin rispetto all'origin del renderer
@@ -28,6 +27,44 @@ test('download YouTube: progresso visibile e traccia in libreria', async () => {
     return res.status
   })
   expect(status).toBe(200)
+
+  await app.close()
+})
+
+test('download in blocco: più URL scaricati insieme', async () => {
+  const { app, page } = await launchApp()
+  await createBoard(page, 'Test')
+  await page.getByRole('button', { name: /Edit/ }).click()
+
+  await page
+    .getByPlaceholder(YT_PLACEHOLDER)
+    .fill('https://youtu.be/aaaaaaaaaaa\nhttps://youtu.be/bbbbbbbbbbb')
+  await page.getByRole('button', { name: 'Scarica audio da YouTube' }).click()
+
+  // Due download accodati contemporaneamente
+  await expect(page.locator('.job')).toHaveCount(2)
+
+  // Entrambe le tracce finiscono in libreria
+  await expect(page.locator('.track .title')).toHaveCount(2, { timeout: 20_000 })
+  await expect(page.locator('.job')).toHaveCount(0)
+  await expect(page.locator('.error')).toHaveCount(0)
+
+  await app.close()
+})
+
+test('download playlist: gli URL vengono espansi', async () => {
+  const { app, page } = await launchApp()
+  await createBoard(page, 'Test')
+  await page.getByRole('button', { name: /Edit/ }).click()
+
+  await page
+    .getByPlaceholder(YT_PLACEHOLDER)
+    .fill('https://www.youtube.com/playlist?list=PLfake')
+  await page.getByRole('button', { name: 'Scarica audio da YouTube' }).click()
+
+  // La playlist finta espande a due video
+  await expect(page.locator('.track .title')).toHaveCount(2, { timeout: 20_000 })
+  await expect(page.locator('.error')).toHaveCount(0)
 
   await app.close()
 })
@@ -58,9 +95,9 @@ test('builtin mancante: il bottone "file mancanti" la ri-scarica', async () => {
 
   const updateBtn = page.getByRole('button', { name: /file mancanti/ })
   await updateBtn.click()
-  await expect(page.locator('.dl-status')).toBeVisible()
+  await expect(page.locator('.job')).toBeVisible()
 
-  // A fine ri-download: non più mancante, bottone sparito, range request ok
+  // A fine ri-download: non più mancante, bottone sparito, nessun errore
   await expect(track).not.toHaveClass(/missing/, { timeout: 20_000 })
   await expect(page.getByRole('button', { name: /file mancanti/ })).toHaveCount(0)
   await expect(page.locator('.error')).toHaveCount(0)
@@ -73,7 +110,7 @@ test('media://: il protocollo supporta le richieste Range (streaming)', async ()
   await createBoard(page, 'Test')
   await page.getByRole('button', { name: /Edit/ }).click()
 
-  await page.getByPlaceholder('URL YouTube').fill('https://youtu.be/dQw4w9WgXcQ')
+  await page.getByPlaceholder(YT_PLACEHOLDER).fill('https://youtu.be/dQw4w9WgXcQ')
   await page.getByRole('button', { name: 'Scarica audio da YouTube' }).click()
   await expect(page.locator('.track .title')).toHaveText('Test Track', { timeout: 20_000 })
 
@@ -95,10 +132,10 @@ test('download YouTube: URL non valido mostra errore', async () => {
   await createBoard(page, 'Test')
   await page.getByRole('button', { name: /Edit/ }).click()
 
-  await page.getByPlaceholder('URL YouTube').fill('https://example.com/not-youtube')
+  await page.getByPlaceholder(YT_PLACEHOLDER).fill('https://example.com/not-youtube')
   await page.getByRole('button', { name: 'Scarica audio da YouTube' }).click()
 
-  await expect(page.locator('.error')).toContainText('URL YouTube non valido')
+  await expect(page.locator('.job-error')).toContainText('URL YouTube non valido')
   await expect(page.locator('.track')).toHaveCount(0)
 
   await app.close()

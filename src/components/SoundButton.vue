@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useLibraryStore } from '../stores/library'
 import { usePlaybackStore } from '../stores/playback'
+import { mediaUrl } from '../media'
 
 const props = defineProps({
   button: { type: Object, required: true },
@@ -25,7 +26,7 @@ const stateClass = computed(() => {
 })
 
 const thumb = computed(() =>
-  track.value?.thumbnailPath ? `media://${track.value.thumbnailPath}` : null
+  track.value?.thumbnailPath ? mediaUrl(track.value.thumbnailPath) : null
 )
 
 const isLoading = computed(

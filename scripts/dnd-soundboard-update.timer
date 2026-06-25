@@ -1,0 +1,11 @@
+[Unit]
+Description=Controllo periodico aggiornamenti DnD Soundboard
+
+[Timer]
+# Primo controllo poco dopo il boot, poi ogni 15 minuti.
+OnBootSec=2min
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

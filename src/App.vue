@@ -14,6 +14,7 @@ const playback = usePlaybackStore()
 
 const newBoardName = ref('')
 const creating = ref(false)
+const ioMsg = ref('')
 
 onMounted(async () => {
   await Promise.all([settings.load(), library.load(), boards.load()])
@@ -29,6 +30,31 @@ async function createBoard() {
   await boards.createBoard(name)
   newBoardName.value = ''
   creating.value = false
+}
+
+let ioMsgTimer = null
+function flashIoMsg(text) {
+  ioMsg.value = text
+  clearTimeout(ioMsgTimer)
+  ioMsgTimer = setTimeout(() => { ioMsg.value = '' }, 5000)
+}
+
+async function exportConfig() {
+  if (await window.api.config.export()) flashIoMsg('Configurazione esportata')
+}
+
+async function importConfig() {
+  try {
+    const res = await window.api.config.import()
+    if (!res) return
+    await Promise.all([settings.load(), library.load(), boards.load()])
+    // Scarica in background gli mp3 mancanti della board corrente
+    const trackIds = boards.current?.buttons.map((b) => b.trackId).filter(Boolean) ?? []
+    library.redownloadMissing(trackIds)
+    flashIoMsg(`Importate ${res.boards} board, ${res.addedTracks} nuove tracce`)
+  } catch (e) {
+    flashIoMsg(e.message)
+  }
 }
 </script>
 
@@ -58,6 +84,10 @@ async function createBoard() {
       <button v-else @click="creating = true">+ Nuova board</button>
 
       <div class="spacer" />
+
+      <span v-if="ioMsg" class="io-msg">{{ ioMsg }}</span>
+      <button title="Esporta board e impostazioni (senza gli mp3)" @click="exportConfig">⤓ Esporta</button>
+      <button title="Importa board e impostazioni da file" @click="importConfig">⤒ Importa</button>
 
       <div class="master">
         <span class="dim">Master</span>
@@ -100,6 +130,7 @@ async function createBoard() {
 }
 .logo { font-weight: 700; letter-spacing: 0.5px; margin-right: 6px; }
 .spacer { flex: 1; }
+.io-msg { color: var(--text-dim); font-size: 12px; }
 .master { display: flex; align-items: center; gap: 8px; }
 .dim { color: var(--text-dim); font-size: 13px; }
 .mode-switch { display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }

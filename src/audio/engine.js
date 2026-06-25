@@ -1,6 +1,8 @@
 // Motore audio basato su Web Audio API.
 // Canali: Music (esclusivo), Ambience (additivo), One-Shot (transiente).
-// Tutti i file audio sono serviti via protocollo media:// dal main process.
+// I file audio sono serviti via mediaUrl(): protocollo media:// in Electron,
+// rotta HTTP /media/ quando il renderer gira nel browser (server LAN).
+import { mediaUrl } from '../media'
 //
 // Music e ambience (file lunghi, in loop) vanno in STREAMING con
 // HTMLAudioElement: partenza immediata e niente PCM decodificato in RAM
@@ -19,7 +21,7 @@ const bufferCache = new Map()
 
 async function loadBuffer(audioPath) {
   if (bufferCache.has(audioPath)) return bufferCache.get(audioPath)
-  const res = await fetch(`media://${audioPath}`)
+  const res = await fetch(mediaUrl(audioPath))
   if (!res.ok) throw new Error(`Audio non trovato: ${audioPath}`)
   const buf = await ctx.decodeAudioData(await res.arrayBuffer())
   bufferCache.set(audioPath, buf)
@@ -50,7 +52,7 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1 } = {}) {
   // Senza crossOrigin il MediaElementSource su media:// (cross-origin
   // rispetto al renderer) emette silenzio per tainting
   el.crossOrigin = 'anonymous'
-  el.src = `media://${audioPath}`
+  el.src = mediaUrl(audioPath)
   el.loop = loop
   el.preload = 'auto'
   const source = ctx.createMediaElementSource(el)

@@ -13,11 +13,15 @@ for a in "$@"; do
   case "$a" in
     -x) mode=audio ;;
     --skip-download) mode=thumb ;;
+    --flat-playlist) mode=playlist ;;
   esac
   [ "$prev" = "-o" ] && out="$a"
   prev="$a"
 done
 case "$mode" in
+  playlist)
+    echo '{"entries":[{"id":"plvid111111","title":"PL One","url":"https://youtu.be/plvid111111"},{"id":"plvid222222","title":"PL Two","url":"https://youtu.be/plvid222222"}]}'
+    ;;
   meta)
     echo '{"title":"Test Track"}'
     ;;

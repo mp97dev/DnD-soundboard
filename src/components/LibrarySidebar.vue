@@ -1,27 +1,26 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { useLibraryStore } from '../stores/library'
 
 const library = useLibraryStore()
 const ytUrl = ref('')
 
 const phaseLabels = {
-  metadata: 'Recupero informazioni video…',
+  metadata: 'Recupero informazioni…',
   audio: 'Download audio…',
   convert: 'Conversione in MP3…',
   thumbnail: 'Download copertina…'
 }
-const progressLabel = computed(() => {
-  const phase = phaseLabels[library.progress?.phase] || 'Download in corso…'
-  return library.redownloadTitle ? `${library.redownloadTitle} — ${phase}` : phase
-})
+function jobLabel(job) {
+  if (job.status === 'error') return job.error
+  return phaseLabels[job.phase] || 'In coda…'
+}
 // Percentuale solo per la fase audio; le altre sono indeterminate
-const progressPct = computed(() => {
-  const p = library.progress
-  return p?.phase === 'audio' && p.percent != null
-    ? Math.min(100, Math.round(p.percent))
+function jobPct(job) {
+  return job.status === 'active' && job.phase === 'audio' && job.percent != null
+    ? Math.min(100, Math.round(job.percent))
     : null
-})
+}
 
 const sections = [
   { type: 'music', label: 'Musica' },
@@ -30,12 +29,10 @@ const sections = [
 ]
 
 async function addYoutube() {
-  const url = ytUrl.value.trim()
-  if (!url) return
-  try {
-    await library.addFromYoutube(url)
-    ytUrl.value = ''
-  } catch { /* errore mostrato nello store */ }
+  const text = ytUrl.value.trim()
+  if (!text) return
+  await library.addFromYoutubeBulk(text)
+  ytUrl.value = ''
 }
 
 function onDragStart(e, track) {
@@ -51,17 +48,20 @@ function onDragStart(e, track) {
     <input v-model="library.search" placeholder="Cerca..." class="search" />
 
     <div class="import">
-      <input v-model="ytUrl" placeholder="URL YouTube" @keyup.enter="addYoutube" />
+      <textarea
+        v-model="ytUrl"
+        class="yt-input"
+        rows="2"
+        placeholder="URL o playlist YouTube"
+        @keydown.enter.exact.prevent="addYoutube"
+      />
       <button
         class="primary icon-btn"
-        :disabled="library.downloading"
-        title="Scarica audio da YouTube"
+        title="Scarica audio da YouTube (una o più righe, anche playlist)"
         aria-label="Scarica audio da YouTube"
         @click="addYoutube"
       >
-        <span v-if="library.downloading" class="spinner" aria-hidden="true" />
         <svg
-          v-else
           width="16" height="16" viewBox="0 0 24 24"
           fill="none" stroke="currentColor" stroke-width="2"
           stroke-linecap="round" stroke-linejoin="round"
@@ -73,16 +73,26 @@ function onDragStart(e, track) {
         </svg>
       </button>
     </div>
-    <div v-if="library.downloading" class="dl-status">
-      <div class="dl-row">
-        <span class="dl-label">{{ progressLabel }}</span>
-        <span v-if="progressPct !== null" class="dl-pct">{{ progressPct }}%</span>
-      </div>
-      <div class="dl-bar" :class="{ indeterminate: progressPct === null }">
-        <div
-          class="dl-fill"
-          :style="progressPct !== null ? { width: progressPct + '%' } : undefined"
-        />
+    <div v-if="library.jobs.length" class="jobs">
+      <div v-for="job in library.jobs" :key="job.id" class="job" :class="{ failed: job.status === 'error' }">
+        <div class="job-row">
+          <span class="job-title" :title="job.title">{{ job.title }}</span>
+          <span v-if="jobPct(job) !== null" class="job-pct">{{ jobPct(job) }}%</span>
+          <button
+            v-if="job.status === 'error'"
+            class="job-dismiss"
+            title="Rimuovi"
+            aria-label="Rimuovi"
+            @click="library.dismissJob(job.id)"
+          >×</button>
+        </div>
+        <span class="job-label" :class="{ 'job-error': job.status === 'error' }">{{ jobLabel(job) }}</span>
+        <div v-if="job.status !== 'error'" class="dl-bar" :class="{ indeterminate: jobPct(job) === null }">
+          <div
+            class="dl-fill"
+            :style="jobPct(job) !== null ? { width: jobPct(job) + '%' } : undefined"
+          />
+        </div>
       </div>
     </div>
     <button class="import-local" @click="library.importLocal()">+ Importa audio locale</button>
@@ -129,29 +139,35 @@ function onDragStart(e, track) {
 }
 h3 { margin: 0; font-size: 15px; }
 h4 { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.6px; }
-.search, .import input { width: 100%; }
-.import { display: flex; gap: 6px; }
-.import input { flex: 1; min-width: 0; }
+.search { width: 100%; }
+.import { display: flex; gap: 6px; align-items: stretch; }
+.yt-input {
+  flex: 1; min-width: 0;
+  resize: vertical;
+  font-family: inherit; font-size: 13px; line-height: 1.4;
+}
 .icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0; width: 34px;
 }
-.spinner {
-  width: 14px; height: 14px;
-  border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
-  border-top-color: currentColor;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-.dl-status { display: flex; flex-direction: column; gap: 4px; }
-.dl-row {
+.jobs { display: flex; flex-direction: column; gap: 8px; }
+.job { display: flex; flex-direction: column; gap: 3px; }
+.job-row {
   display: flex; justify-content: space-between; align-items: baseline;
   gap: 8px;
-  font-size: 12px; color: var(--text-dim);
+  font-size: 13px;
 }
-.dl-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dl-pct { color: var(--text); font-variant-numeric: tabular-nums; }
+.job-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-pct { color: var(--text); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.job-dismiss {
+  flex-shrink: 0; padding: 0 4px; line-height: 1;
+  background: none; border: none; color: var(--text-dim); cursor: pointer;
+}
+.job-label {
+  font-size: 11px; color: var(--text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.job-error { color: var(--danger); }
 .dl-bar {
   height: 4px; border-radius: 2px; overflow: hidden;
   background: var(--bg-raised);

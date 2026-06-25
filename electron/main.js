@@ -6,6 +6,7 @@ const { DATA_DIR, ensureDataDirs } = require('./paths')
 const registerFilesystemIpc = require('./ipc/filesystem')
 const registerSettingsIpc = require('./ipc/settings')
 const registerYtdlpIpc = require('./ipc/ytdlp')
+const registerConfigIpc = require('./ipc/config')
 
 // WSL: la GPU virtuale causa errori di rendering (popup dei select inclusi)
 function isWSL() {
@@ -139,6 +140,7 @@ app.whenReady().then(() => {
   registerFilesystemIpc()
   registerSettingsIpc()
   registerYtdlpIpc()
+  registerConfigIpc()
 
   createWindow()
 
