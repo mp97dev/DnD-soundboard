@@ -1,0 +1,104 @@
+# Build automatici Windows + Linux e pubblicazione della release.
+#
+# - push di un tag v*  → build + release con changelog (commit dal tag precedente)
+# - workflow_dispatch  → solo build, artifact scaricabili dalla run (niente release)
+#
+# Per pubblicare: `npm version 0.2.0 && git push --follow-tags`
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build .deb + AppImage (bundles yt-dlp + static ffmpeg)
+        run: npm run build:linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            dist/out/*.deb
+            dist/out/*.AppImage
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build NSIS installer + portable zip
+        run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/out/*.exe
+            dist/out/*-win.zip
+          if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # storia completa: serve per il changelog tra tag
+
+      - name: Check tag matches package.json version
+        run: |
+          PKG_VERSION="v$(node -p "require('./package.json').version")"
+          if [ "$PKG_VERSION" != "${{ github.ref_name }}" ]; then
+            echo "::error::Tag ${{ github.ref_name }} != package.json version $PKG_VERSION (gli artifact avrebbero la versione sbagliata)"
+            exit 1
+          fi
+
+      - name: Changelog from commit history
+        run: |
+          PREV_TAG="$(git describe --tags --abbrev=0 '${{ github.ref_name }}^' 2>/dev/null || true)"
+          {
+            if [ -n "$PREV_TAG" ]; then
+              echo "## Changes since $PREV_TAG"
+              echo
+              git log --pretty='- %s (%h)' "$PREV_TAG..${{ github.ref_name }}"
+            else
+              echo "## Changes"
+              echo
+              git log --pretty='- %s (%h)' '${{ github.ref_name }}'
+            fi
+          } > CHANGELOG.md
+          cat CHANGELOG.md
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: DnD Soundboard ${{ github.ref_name }}
+          body_path: CHANGELOG.md
+          files: |
+            artifacts/*.exe
+            artifacts/*-win.zip
+            artifacts/*.deb
+            artifacts/*.AppImage
+          fail_on_unmatched_files: true

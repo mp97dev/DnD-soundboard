@@ -31,8 +31,13 @@ if [ "$WIN" = 1 ]; then
 
   echo "==> Extracting ffmpeg.exe and ffprobe.exe ..."
   mkdir -p "$BIN_DIR"
-  # -j: junk paths (no subdirectory), -o: overwrite
-  unzip -jo "$TMP/ffmpeg.zip" "*/bin/ffmpeg.exe" "*/bin/ffprobe.exe" -d "$BIN_DIR"
+  if command -v unzip &>/dev/null; then
+    # -j: junk paths (no subdirectory), -o: overwrite
+    unzip -jo "$TMP/ffmpeg.zip" "*/bin/ffmpeg.exe" "*/bin/ffprobe.exe" -d "$BIN_DIR"
+  else
+    # Git Bash (runner Windows di GitHub Actions) non ha unzip: usa 7z
+    7z e -y -o"$BIN_DIR" "$TMP/ffmpeg.zip" "*/bin/ffmpeg.exe" "*/bin/ffprobe.exe" -r
+  fi
 
   echo "==> Done: $(ls -lh "$BIN_DIR/ffmpeg.exe" "$BIN_DIR/ffprobe.exe")"
 else
