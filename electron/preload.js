@@ -16,7 +16,14 @@ contextBridge.exposeInMainWorld('api', {
   library: {
     list: () => invoke('library:list'),
     save: (tracks) => invoke('library:save', tracks),
-    importLocal: () => invoke('library:importLocal')
+    importLocal: () => invoke('library:importLocal'),
+    importLocalVisual: () => invoke('library:importLocalVisual')
+  },
+  cast: {
+    devices: () => invoke('cast:devices'),
+    status: () => invoke('cast:status'),
+    show: ({ host, path, title }) => invoke('cast:show', { host, path, title }),
+    stop: () => invoke('cast:stop')
   },
   settings: {
     get: () => invoke('settings:get'),
@@ -29,6 +36,7 @@ contextBridge.exposeInMainWorld('api', {
   ytdlp: {
     expand: (text) => invoke('ytdlp:expand', text),
     download: (url, jobId) => invoke('ytdlp:download', { url, jobId }),
+    downloadVisual: (url, jobId) => invoke('ytdlp:downloadVisual', { url, jobId }),
     redownload: (track, jobId) => invoke('ytdlp:redownload', { track, jobId }),
     onProgress: (cb) => {
       const listener = (_e, p) => cb(p)

@@ -55,8 +55,9 @@ module.exports = function registerFilesystemIpc() {
     const allTracks = [...builtins, ...index.tracks]
     // Verifica esistenza file locali
     allTracks.forEach((t) => {
-      // audioPath usa sempre '/' nel JSON: ricostruito coi separatori dell'OS
-      t.missing = !fs.existsSync(path.join(DATA_DIR, ...t.audioPath.split('/')))
+      // i path usano sempre '/' nel JSON: ricostruiti coi separatori dell'OS
+      const p = t.audioPath || t.mediaPath
+      t.missing = !p || !fs.existsSync(path.join(DATA_DIR, ...p.split('/')))
     })
     return allTracks
   })
@@ -92,6 +93,35 @@ module.exports = function registerFilesystemIpc() {
         type: 'oneshot',
         volume: 1,
         audioPath: `library/downloaded/${destName}`,
+        thumbnailPath: null,
+        source: { type: 'local' }
+      }
+    })
+  })
+
+  // ---- Import visual locale (immagini/video per il cast) ----
+  ipcMain.handle('library:importLocalVisual', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Importa immagine o video',
+      filters: [
+        { name: 'Immagini e video', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'mp4', 'm4v', 'webm'] }
+      ],
+      properties: ['openFile', 'multiSelections']
+    })
+    if (canceled) return []
+
+    return filePaths.map((src) => {
+      const id = 'local_' + crypto.randomBytes(6).toString('hex')
+      const ext = path.extname(src)
+      const destName = id + ext
+      fs.copyFileSync(src, path.join(DIRS.downloaded, destName))
+      return {
+        id,
+        version: 1,
+        title: path.basename(src, ext),
+        type: 'visual',
+        volume: 1,
+        mediaPath: `library/downloaded/${destName}`,
         thumbnailPath: null,
         source: { type: 'local' }
       }

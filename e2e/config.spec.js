@@ -33,7 +33,7 @@ test('export/import: round-trip di board tra istanze diverse', async () => {
   await b.page.getByRole('button', { name: /Importa/ }).click()
 
   // La board importata compare nel selettore
-  await expect(b.page.locator('select')).toHaveValue(/my-board/, { timeout: 10_000 })
+  await expect(b.page.locator('select.board-select')).toHaveValue(/my-board/, { timeout: 10_000 })
   await expect(b.page.locator('.io-msg')).toContainText('Importate')
   await b.app.close()
 

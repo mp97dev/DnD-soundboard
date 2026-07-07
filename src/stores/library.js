@@ -77,7 +77,10 @@ export const useLibraryStore = defineStore('library', {
           await window.api.ytdlp.redownload(clone(track), job.id)
           if (track) track.missing = false
         } else {
-          const track = await window.api.ytdlp.download(job.url, job.id)
+          const dl = job.kind === 'download-visual'
+            ? window.api.ytdlp.downloadVisual
+            : window.api.ytdlp.download
+          const track = await dl(job.url, job.id)
           if (!this.byId(track.id)) this.tracks.push(track)
           await this.persist()
         }
@@ -100,7 +103,8 @@ export const useLibraryStore = defineStore('library', {
     },
 
     // Accetta uno o più URL / playlist (testo multilinea) e accoda i download.
-    async addFromYoutubeBulk(text) {
+    // asVisual: scarica il VIDEO mp4 (per il cast) invece dell'audio mp3.
+    async addFromYoutubeBulk(text, { asVisual = false } = {}) {
       this.error = null
       let entries
       try {
@@ -109,14 +113,16 @@ export const useLibraryStore = defineStore('library', {
         this.error = e.message
         return
       }
+      const kind = asVisual ? 'download-visual' : 'download'
+      const idPrefix = asVisual ? 'ytv_' : 'yt_'
       for (const en of entries) {
         // Salta se già in libreria e presente, o già in coda/in corso
-        const existing = en.ytId && this.byId(`yt_${en.ytId}`)
+        const existing = en.ytId && this.byId(`${idPrefix}${en.ytId}`)
         if (existing && !existing.missing) continue
-        if (this.jobs.some((j) => j.url === en.url && j.status !== 'error')) continue
+        if (this.jobs.some((j) => j.url === en.url && j.kind === kind && j.status !== 'error')) continue
         this.jobs.push({
           id: uid(),
-          kind: 'download',
+          kind,
           url: en.url,
           ytId: en.ytId,
           trackId: null,
@@ -136,6 +142,11 @@ export const useLibraryStore = defineStore('library', {
 
     async importLocal() {
       const newTracks = await window.api.library.importLocal()
+      this.tracks.push(...newTracks)
+      if (newTracks.length) await this.persist()
+    },
+    async importLocalVisual() {
+      const newTracks = await window.api.library.importLocalVisual()
       this.tracks.push(...newTracks)
       if (newTracks.length) await this.persist()
     },

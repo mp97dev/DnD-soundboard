@@ -29,7 +29,8 @@ export const useBoardsStore = defineStore('boards', {
       // Ri-scarica in background i file mancanti usati dalla board,
       // senza bloccare il cambio di board
       const library = useLibraryStore()
-      const trackIds = this.current?.buttons.map((b) => b.trackId).filter(Boolean) ?? []
+      const trackIds =
+        this.current?.buttons.flatMap((b) => [b.trackId, b.visualId]).filter(Boolean) ?? []
       library.redownloadMissing(trackIds)
     },
     async createBoard(name) {
@@ -83,10 +84,14 @@ export const useBoardsStore = defineStore('boards', {
       const span = { rowSpan: 1, colSpan: 2 }
       const cell = pos ?? this.findFreeCell(span)
       if (!cell) return
+      // Un visual trascinato sulla griglia diventa un bottone di cast;
+      // assegnando poi anche una traccia si ottiene una scena (audio + TV)
+      const isVisual = track?.type === 'visual'
       const btn = {
         id: uid(),
         label: track?.title?.slice(0, 24) ?? 'Nuovo',
-        trackId: track?.id ?? null,
+        trackId: isVisual ? null : track?.id ?? null,
+        visualId: isVisual ? track.id : null,
         row: cell.row,
         col: cell.col,
         ...span

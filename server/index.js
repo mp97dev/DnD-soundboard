@@ -11,6 +11,8 @@ const { WebSocketServer } = require('ws')
 
 const store = require('./lib/store')
 const ytdlp = require('./lib/ytdlp')
+const cast = require('./lib/cast')
+const { serveMedia, contentTypeFor } = require('./lib/media')
 const { DATA_DIR, RENDERER_DIR, ensureDataDirs } = require('./lib/paths')
 
 const PORT = Number(process.env.PORT) || 8080
@@ -37,9 +39,10 @@ app.delete('/api/boards/:id', (req, res) => res.json(store.deleteBoard(req.param
 
 app.get('/api/library', (_req, res) => res.json(store.listLibrary()))
 app.post('/api/library', (req, res) => res.json(store.saveLibrary(req.body)))
-app.post('/api/library/import', express.raw({ type: '*/*', limit: '200mb' }), (req, res) => {
+app.post('/api/library/import', express.raw({ type: '*/*', limit: '500mb' }), (req, res) => {
   const name = decodeURIComponent(req.get('X-Filename') || 'audio.mp3')
-  res.json(store.importLocalFile(req.body, name))
+  const kind = req.query.kind === 'visual' ? 'visual' : 'audio'
+  res.json(store.importLocalFile(req.body, name, kind))
 })
 
 app.get('/api/settings', (_req, res) => res.json(store.getSettings()))
@@ -74,13 +77,23 @@ app.post('/api/ytdlp/download', async (req, res) => {
     res.status(500).json({ error: e.message })
   }
 })
+app.post('/api/ytdlp/download-visual', async (req, res) => {
+  const { url, jobId } = req.body || {}
+  try {
+    const track = await ytdlp.downloadVisual(url, (p) => broadcast({ type: 'progress', jobId, ...p }))
+    res.json(track)
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
 app.post('/api/ytdlp/redownload', async (req, res) => {
   const { track, jobId } = req.body || {}
   if (track?.source?.type !== 'youtube') {
     return res.status(400).json({ error: 'Non è una traccia YouTube' })
   }
   try {
-    const t = await ytdlp.downloadTrack(track.source.url, (p) =>
+    const dl = track.type === 'visual' ? ytdlp.downloadVisual : ytdlp.downloadTrack
+    const t = await dl(track.source.url, (p) =>
       broadcast({ type: 'progress', jobId, ...p })
     )
     res.json(t)
@@ -89,64 +102,30 @@ app.post('/api/ytdlp/redownload', async (req, res) => {
   }
 })
 
-// ---------- Media (con supporto Range) ----------
-const MIME = {
-  '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav',
-  '.m4a': 'audio/mp4', '.flac': 'audio/flac',
-  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp'
-}
-
-function serveMedia(req, res, rel) {
-  rel = decodeURIComponent(rel)
-  const resolved = path.normalize(path.join(DATA_DIR, ...rel.split('/')))
-  // Niente path traversal fuori da DATA_DIR
-  const outside = path.relative(path.normalize(DATA_DIR), resolved)
-  if (outside.startsWith('..') || path.isAbsolute(outside)) return res.status(403).end('Forbidden')
-
-  let stat
+// ---------- Chromecast ----------
+// Il cast parte da QUI (Node), non dal browser: il server ordina al
+// Chromecast di scaricare il media dal proprio endpoint /media/.
+app.get('/api/cast/devices', (_req, res) => res.json(cast.listDevices()))
+app.get('/api/cast/status', (_req, res) => res.json(cast.status()))
+app.post('/api/cast/stop', async (_req, res) => res.json(await cast.stop()))
+app.post('/api/cast/show', async (req, res) => {
+  const { host, path: mediaPath, title } = req.body || {}
   try {
-    stat = fs.statSync(resolved)
-  } catch {
-    return res.status(404).end('Not found')
+    // URL raggiungibile dalla TV: l'host con cui il client ha raggiunto il
+    // server (se non è localhost), altrimenti l'IP LAN rilevato.
+    const reqHost = String(req.headers.host || '').split(':')[0]
+    const usable = reqHost && !['localhost', '127.0.0.1'].includes(reqHost) ? reqHost : cast.lanIp()
+    if (!usable) throw new Error('Impossibile determinare l\'IP LAN del server')
+    const url = `http://${usable}:${PORT}/media/${mediaPath.split('/').map(encodeURIComponent).join('/')}`
+    res.json(await cast.show({ host, url, contentType: contentTypeFor(mediaPath), title }))
+  } catch (e) {
+    res.status(500).json({ error: e.message })
   }
+})
 
-  const size = stat.size
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Accept-Ranges', 'bytes')
-  res.setHeader('Content-Type', MIME[path.extname(resolved).toLowerCase()] || 'application/octet-stream')
-  // I file media sono content-addressed (ytId) e non cambiano mai: immutable
-  // → il browser li riusa dalla cache senza ri-scaricarli (egress ~ 1x/device).
-  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
-
-  const range = req.headers.range
-  const m = range ? /^bytes=(\d*)-(\d*)$/.exec(range.trim()) : null
-  if (m && (m[1] !== '' || m[2] !== '')) {
-    let start, end
-    if (m[1] === '') {
-      start = Math.max(0, size - Number(m[2]))
-      end = size - 1
-    } else {
-      start = Number(m[1])
-      end = m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1)
-    }
-    if (start >= size || start > end) {
-      res.setHeader('Content-Range', `bytes */${size}`)
-      return res.status(416).end()
-    }
-    res.status(206)
-    res.setHeader('Content-Range', `bytes ${start}-${end}/${size}`)
-    res.setHeader('Content-Length', end - start + 1)
-    if (req.method === 'HEAD') return res.end()
-    return fs.createReadStream(resolved, { start, end }).pipe(res)
-  }
-
-  res.status(200)
-  res.setHeader('Content-Length', size)
-  if (req.method === 'HEAD') return res.end()
-  fs.createReadStream(resolved).pipe(res)
-}
-app.get(/^\/media\/(.+)/, (req, res) => serveMedia(req, res, req.params[0]))
-app.head(/^\/media\/(.+)/, (req, res) => serveMedia(req, res, req.params[0]))
+// ---------- Media (con supporto Range) ----------
+app.get(/^\/media\/(.+)/, (req, res) => serveMedia(req, res, req.params[0], DATA_DIR))
+app.head(/^\/media\/(.+)/, (req, res) => serveMedia(req, res, req.params[0], DATA_DIR))
 
 // ---------- Shell + asset statici ----------
 // index.html della build, con iniettati il media base e il web shim PRIMA del

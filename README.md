@@ -45,6 +45,11 @@ Run it two ways from the same codebase:
 - **Self-healing** — if a referenced audio file is missing, it's re-downloaded
   automatically from its YouTube source on board open.
 - **Local-first** — everything lives in plain JSON + local files; no account, no cloud.
+- **Chromecast visuals** — import images/videos (or download YouTube videos as mp4)
+  and cast them to a Chromecast on your LAN. Audio keeps playing locally (e.g. out
+  of a Bluetooth speaker), the TV only shows the visual.
+- **Scenes** — a button can hold an audio track *and* a visual: one tap starts the
+  music locally and puts the matching image/video on the TV.
 
 ---
 
@@ -55,7 +60,14 @@ Run it two ways from the same codebase:
 - **Node.js 20+**
 - **`yt-dlp`** — in your `PATH` or in `./bin` (`yt-dlp.exe` on Windows).
   `./install.sh` / `npm run fetch:ytdlp` fetches the latest release into `./bin`.
-- **`ffmpeg`** — in your `PATH` (yt-dlp uses it to convert to mp3).
+- **`ffmpeg`** — in your `PATH` or in `./bin` (`npm run fetch:ffmpeg` /
+  `fetch:ffmpeg:win` downloads a static build; packaged builds bundle it).
+- **Linux only**: Electron needs a few system libraries that minimal
+  Debian/Ubuntu/WSL installs lack. `./install.sh` detects and installs them, or run:
+
+  ```bash
+  sudo apt-get install -y libnss3 libnspr4 libasound2t64   # libasound2 before Ubuntu 24.04
+  ```
 
 ### Run in development
 
@@ -68,13 +80,17 @@ npm run dev        # launches Vite + Electron with hot reload
 
 ### Build a distributable
 
-| Platform | Command |
-|---|---|
-| Windows | `npm run build` |
-| Ubuntu / Linux | `npm run build:linux` |
-| macOS | `npm run build:mac` |
+| Platform | Command | Output |
+|---|---|---|
+| Windows (on Windows) | `npm run build` | NSIS installer + portable zip |
+| Windows (from Linux/WSL, no wine) | `npm run build:win:zip` | portable zip |
+| Ubuntu / Linux | `npm run build:linux` | `.deb` + AppImage |
+| macOS | `npm run build:mac` | default target |
 
-Output lands in `dist/out/`.
+Output lands in `dist/out/`. The Linux packages bundle static `yt-dlp` + `ffmpeg`;
+install the `.deb` with `sudo apt install ./dnd-soundboard_*.deb` (pulls in the
+required system libraries automatically). The AppImage additionally needs
+`libfuse2` on Ubuntu 22.04+ (`sudo apt install libfuse2`).
 
 ---
 
@@ -132,6 +148,32 @@ The session view — big buttons, no editing. Tap to trigger. Button colours:
 | Dashed / faded | File missing or no track assigned |
 
 The toolbar has the **Master** volume slider and **⏹ Stop All** (fades everything out).
+
+### Visuals & Chromecast
+
+In **Edit mode** the library has a **Visual (cast)** section:
+
+- **+ Importa immagine/video** — add local jpg/png/webp/gif or mp4/webm files.
+- The **🎬 button** next to the YouTube box downloads the *video* (Chromecast-safe
+  H.264 mp4, max 1080p) instead of the audio.
+
+Pick your Chromecast from the **📺 dropdown** in the toolbar (devices are
+discovered via mDNS; use *"IP manuale…"* if discovery doesn't work on your
+network). Drag a visual onto the grid like any track: tapping the button casts
+it to the TV (videos loop automatically, images stay up). Tap again — or the
+**✕** next to the dropdown, or **Stop All** — to stop casting.
+
+How it works: the app (desktop or server) runs a small HTTP media endpoint on
+your LAN and tells the Chromecast to fetch the file from it — no browser tab
+casting, no mirroring, so it's reliable and cheap.
+
+### Scenes
+
+A button can have **both** a *Traccia* (audio) and a *Visual (Chromecast)* —
+set them in the properties panel. Tapping it starts the music/ambience locally
+**and** casts the visual: that's a scene ("enter the tavern" = tavern music +
+tavern picture on the TV). Audio out (e.g. Bluetooth speaker) is just your OS
+default output device.
 
 ### Export / Import
 

@@ -16,11 +16,37 @@ const newBoardName = ref('')
 const creating = ref(false)
 const ioMsg = ref('')
 
+// ---- Chromecast ----
+const castDevices = ref([])
+async function refreshCastDevices() {
+  try {
+    castDevices.value = await window.api.cast.devices()
+  } catch { /* discovery non disponibile */ }
+}
+function selectCastDevice(ev) {
+  let host = ev.target.value || null
+  let name = null
+  if (host === '__manual') {
+    // Fallback per reti dove la discovery mDNS non funziona
+    host = (prompt('IP del Chromecast (es. 192.168.1.50):') || '').trim() || null
+    name = host
+    ev.target.value = settings.castDeviceHost ?? ''
+    if (!host) return
+  } else {
+    name = castDevices.value.find((d) => d.host === host)?.name ?? null
+  }
+  settings.update({ castDeviceHost: host, castDeviceName: name })
+}
+
 onMounted(async () => {
   await Promise.all([settings.load(), library.load(), boards.load()])
+  refreshCastDevices()
+  // la discovery mDNS impiega qualche secondo a popolare la lista
+  setTimeout(refreshCastDevices, 4000)
   // All'avvio nessuno passa da openBoard: il check dei file mancanti
   // della board iniziale va fatto qui (in background)
-  const trackIds = boards.current?.buttons.map((b) => b.trackId).filter(Boolean) ?? []
+  const trackIds =
+    boards.current?.buttons.flatMap((b) => [b.trackId, b.visualId]).filter(Boolean) ?? []
   library.redownloadMissing(trackIds)
 })
 
@@ -48,8 +74,9 @@ async function importConfig() {
     const res = await window.api.config.import()
     if (!res) return
     await Promise.all([settings.load(), library.load(), boards.load()])
-    // Scarica in background gli mp3 mancanti della board corrente
-    const trackIds = boards.current?.buttons.map((b) => b.trackId).filter(Boolean) ?? []
+    // Scarica in background i file mancanti della board corrente
+    const trackIds =
+      boards.current?.buttons.flatMap((b) => [b.trackId, b.visualId]).filter(Boolean) ?? []
     library.redownloadMissing(trackIds)
     flashIoMsg(`Importate ${res.boards} board, ${res.addedTracks} nuove tracce`)
   } catch (e) {
@@ -65,6 +92,7 @@ async function importConfig() {
 
       <select
         v-if="boards.boards.length"
+        class="board-select"
         :value="boards.currentBoardId"
         @change="boards.openBoard($event.target.value)"
       >
@@ -86,6 +114,25 @@ async function importConfig() {
       <div class="spacer" />
 
       <span v-if="ioMsg" class="io-msg">{{ ioMsg }}</span>
+      <span v-if="playback.castError" class="io-msg cast-error">{{ playback.castError }}</span>
+
+      <div class="cast" title="Chromecast su cui mostrare i visual">
+        <span class="dim">📺</span>
+        <select :value="settings.castDeviceHost ?? ''" @focus="refreshCastDevices" @change="selectCastDevice">
+          <option value="">— nessun cast —</option>
+          <option
+            v-if="settings.castDeviceHost && !castDevices.some((d) => d.host === settings.castDeviceHost)"
+            :value="settings.castDeviceHost"
+          >{{ settings.castDeviceName ?? settings.castDeviceHost }}</option>
+          <option v-for="d in castDevices" :key="d.host" :value="d.host">{{ d.name }}</option>
+          <option value="__manual">IP manuale…</option>
+        </select>
+        <button
+          v-if="playback.activeCastId"
+          title="Interrompi il cast"
+          @click="playback.stopCast()"
+        >✕</button>
+      </div>
       <button title="Esporta board e impostazioni (senza gli mp3)" @click="exportConfig">⤓ Esporta</button>
       <button title="Importa board e impostazioni da file" @click="importConfig">⤒ Importa</button>
 
@@ -131,6 +178,9 @@ async function importConfig() {
 .logo { font-weight: 700; letter-spacing: 0.5px; margin-right: 6px; }
 .spacer { flex: 1; }
 .io-msg { color: var(--text-dim); font-size: 12px; }
+.cast-error { color: var(--danger); }
+.cast { display: flex; align-items: center; gap: 6px; }
+.cast select { max-width: 160px; }
 .master { display: flex; align-items: center; gap: 8px; }
 .dim { color: var(--text-dim); font-size: 13px; }
 .mode-switch { display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }

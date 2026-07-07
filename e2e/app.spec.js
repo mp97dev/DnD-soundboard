@@ -13,7 +13,7 @@ test('creazione board e switch modalità', async () => {
   await createBoard(page, 'Sessione Test')
 
   await expect(page.locator('.empty')).toHaveCount(0)
-  await expect(page.locator('select')).toHaveValue(/sessione-test/)
+  await expect(page.locator('select.board-select')).toHaveValue(/sessione-test/)
 
   await page.getByRole('button', { name: /Edit/ }).click()
   await expect(page.getByPlaceholder('URL o playlist YouTube')).toBeVisible()

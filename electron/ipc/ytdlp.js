@@ -155,6 +155,64 @@ async function downloadTrack(url, onProgress = () => {}) {
   }
 }
 
+// Scarica il VIDEO (per il casting su Chromecast): mp4 con H.264 + AAC,
+// il profilo compatibile con tutti i modelli di Chromecast, max 1080p.
+async function downloadVisual(url, onProgress = () => {}) {
+  const ytId = extractYoutubeId(url)
+  if (!ytId) throw new Error('URL YouTube non valido')
+
+  const base = baseArgs()
+
+  onProgress({ phase: 'metadata', percent: null })
+  const meta = JSON.parse(await run([...base, '-J', '--no-playlist', url]))
+
+  const videoName = `${ytId}.mp4`
+  const videoOut = path.join(DIRS.downloaded, videoName)
+  onProgress({ phase: 'video', percent: 0 })
+  await run(
+    [
+      ...base,
+      '-f', 'bestvideo[ext=mp4][vcodec^=avc1][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]/best[height<=1080]',
+      '--merge-output-format', 'mp4',
+      '--no-playlist', '--newline',
+      '-o', videoOut,
+      url
+    ],
+    (line) => {
+      const m = line.match(/^\[download\]\s+([\d.]+)%/)
+      if (m) onProgress({ phase: 'video', percent: Number(m[1]) })
+      else if (line.startsWith('[Merger]')) onProgress({ phase: 'convert', percent: null })
+    }
+  )
+
+  onProgress({ phase: 'thumbnail', percent: null })
+  let thumbnailPath = null
+  try {
+    await run([
+      ...base,
+      '--skip-download', '--write-thumbnail', '--convert-thumbnails', 'jpg',
+      '-o', path.join(DIRS.thumbnails, ytId),
+      url
+    ])
+    if (fs.existsSync(path.join(DIRS.thumbnails, `${ytId}.jpg`))) {
+      thumbnailPath = `library/thumbnails/${ytId}.jpg`
+    }
+  } catch { /* thumbnail facoltativa */ }
+
+  if (!fs.existsSync(videoOut)) throw new Error('Download video fallito')
+
+  return {
+    id: `ytv_${ytId}`,
+    version: 1,
+    title: meta.title || ytId,
+    type: 'visual',
+    volume: 1,
+    mediaPath: `library/downloaded/${videoName}`,
+    thumbnailPath,
+    source: { type: 'youtube', youtubeId: ytId, url }
+  }
+}
+
 module.exports = function registerYtdlpIpc() {
   // Espansione playlist / lista di URL (per il download in blocco)
   ipcMain.handle('ytdlp:expand', (_e, text) => expandUrls(text))
@@ -165,10 +223,16 @@ module.exports = function registerYtdlpIpc() {
     downloadTrack(url, (p) => e.sender.send('ytdlp:progress', { jobId, ...p }))
   )
 
+  // Download del video mp4 (visual per il casting)
+  ipcMain.handle('ytdlp:downloadVisual', (e, { url, jobId } = {}) =>
+    downloadVisual(url, (p) => e.sender.send('ytdlp:progress', { jobId, ...p }))
+  )
+
   // Ri-download automatico per file mancanti (al caricamento board)
   ipcMain.handle('ytdlp:redownload', (e, { track, jobId } = {}) => {
     if (track?.source?.type !== 'youtube') throw new Error('Non è una traccia YouTube')
-    return downloadTrack(track.source.url, (p) =>
+    const dl = track.type === 'visual' ? downloadVisual : downloadTrack
+    return dl(track.source.url, (p) =>
       e.sender.send('ytdlp:progress', { jobId, ...p })
     )
   })

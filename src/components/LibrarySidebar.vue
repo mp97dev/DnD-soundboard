@@ -8,16 +8,17 @@ const ytUrl = ref('')
 const phaseLabels = {
   metadata: 'Recupero informazioni…',
   audio: 'Download audio…',
-  convert: 'Conversione in MP3…',
+  video: 'Download video…',
+  convert: 'Conversione…',
   thumbnail: 'Download copertina…'
 }
 function jobLabel(job) {
   if (job.status === 'error') return job.error
   return phaseLabels[job.phase] || 'In coda…'
 }
-// Percentuale solo per la fase audio; le altre sono indeterminate
+// Percentuale solo per le fasi audio/video; le altre sono indeterminate
 function jobPct(job) {
-  return job.status === 'active' && job.phase === 'audio' && job.percent != null
+  return job.status === 'active' && ['audio', 'video'].includes(job.phase) && job.percent != null
     ? Math.min(100, Math.round(job.percent))
     : null
 }
@@ -25,13 +26,14 @@ function jobPct(job) {
 const sections = [
   { type: 'music', label: 'Musica' },
   { type: 'ambience', label: 'Ambience' },
-  { type: 'oneshot', label: 'One-Shot' }
+  { type: 'oneshot', label: 'One-Shot' },
+  { type: 'visual', label: 'Visual (cast)' }
 ]
 
-async function addYoutube() {
+async function addYoutube(asVisual = false) {
   const text = ytUrl.value.trim()
   if (!text) return
-  await library.addFromYoutubeBulk(text)
+  await library.addFromYoutubeBulk(text, { asVisual })
   ytUrl.value = ''
 }
 
@@ -55,23 +57,31 @@ function onDragStart(e, track) {
         placeholder="URL o playlist YouTube"
         @keydown.enter.exact.prevent="addYoutube"
       />
-      <button
-        class="primary icon-btn"
-        title="Scarica audio da YouTube (una o più righe, anche playlist)"
-        aria-label="Scarica audio da YouTube"
-        @click="addYoutube"
-      >
-        <svg
-          width="16" height="16" viewBox="0 0 24 24"
-          fill="none" stroke="currentColor" stroke-width="2"
-          stroke-linecap="round" stroke-linejoin="round"
-          aria-hidden="true"
+      <div class="import-btns">
+        <button
+          class="primary icon-btn"
+          title="Scarica audio da YouTube (una o più righe, anche playlist)"
+          aria-label="Scarica audio da YouTube"
+          @click="addYoutube(false)"
         >
-          <path d="M12 3v12" />
-          <path d="m7 10 5 5 5-5" />
-          <path d="M5 21h14" />
-        </svg>
-      </button>
+          <svg
+            width="16" height="16" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M12 3v12" />
+            <path d="m7 10 5 5 5-5" />
+            <path d="M5 21h14" />
+          </svg>
+        </button>
+        <button
+          class="icon-btn"
+          title="Scarica VIDEO da YouTube (mp4, per il cast su Chromecast)"
+          aria-label="Scarica video da YouTube"
+          @click="addYoutube(true)"
+        >🎬</button>
+      </div>
     </div>
     <div v-if="library.jobs.length" class="jobs">
       <div v-for="job in library.jobs" :key="job.id" class="job" :class="{ failed: job.status === 'error' }">
@@ -96,6 +106,7 @@ function onDragStart(e, track) {
       </div>
     </div>
     <button class="import-local" @click="library.importLocal()">+ Importa audio locale</button>
+    <button class="import-local" @click="library.importLocalVisual()">+ Importa immagine/video</button>
     <button
       v-if="library.missingDownloadable.length"
       class="import-local update-library"
@@ -141,6 +152,7 @@ h3 { margin: 0; font-size: 15px; }
 h4 { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.6px; }
 .search { width: 100%; }
 .import { display: flex; gap: 6px; align-items: stretch; }
+.import-btns { display: flex; flex-direction: column; gap: 4px; }
 .yt-input {
   flex: 1; min-width: 0;
   resize: vertical;
@@ -203,5 +215,6 @@ h4 { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; color: var(-
 .type-dot.music { background: var(--music); }
 .type-dot.ambience { background: var(--ambience); }
 .type-dot.oneshot { background: var(--oneshot); }
+.type-dot.visual { background: var(--visual); }
 .dim { color: var(--text-dim); font-size: 12px; margin: 2px 0; }
 </style>

@@ -6,7 +6,9 @@ export const useSettingsStore = defineStore('settings', {
     version: 1,
     masterVolume: 0.8,
     musicTransition: 'crossfade',
-    transitionDuration: 3000
+    transitionDuration: 3000,
+    castDeviceHost: null,
+    castDeviceName: null
   }),
   actions: {
     async load() {

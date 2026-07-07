@@ -7,9 +7,46 @@ export const usePlaybackStore = defineStore('playback', {
     activeMusicId: null,
     activeAmbienceIds: [],
     flashingIds: [], // one-shot in flash
-    loadingIds: [] // tracce in caricamento (apertura stream / decode one-shot)
+    loadingIds: [], // tracce in caricamento (apertura stream / decode one-shot)
+    activeCastId: null, // visual attualmente in cast sul Chromecast
+    castError: null
   }),
   actions: {
+    // Bottone della board: può avere una traccia audio, un visual da castare,
+    // o entrambi (= scena). L'audio suona in locale, il visual va in TV.
+    async triggerButton(button, library) {
+      const track = button.trackId ? library.byId(button.trackId) : null
+      const visual = button.visualId ? library.byId(button.visualId) : null
+      if (track) await this.trigger(track)
+      if (visual && !visual.missing) {
+        if (this.activeCastId === visual.id) await this.stopCast()
+        else await this.castVisual(visual)
+      }
+    },
+    async castVisual(visual) {
+      const settings = useSettingsStore()
+      this.castError = null
+      if (!settings.castDeviceHost) {
+        this.castError = 'Seleziona un Chromecast dal menu 📺 nella toolbar'
+        return
+      }
+      try {
+        await window.api.cast.show({
+          host: settings.castDeviceHost,
+          path: visual.mediaPath,
+          title: visual.title
+        })
+        this.activeCastId = visual.id
+      } catch (e) {
+        this.castError = `Cast fallito: ${e.message}`
+      }
+    },
+    async stopCast() {
+      this.activeCastId = null
+      try {
+        await window.api.cast.stop()
+      } catch { /* la TV può essere già spenta */ }
+    },
     async trigger(track) {
       const settings = useSettingsStore()
       if (!track || track.missing) return
@@ -57,6 +94,7 @@ export const usePlaybackStore = defineStore('playback', {
       engine.stopAll()
       this.activeMusicId = null
       this.activeAmbienceIds = []
+      if (this.activeCastId) this.stopCast()
     }
   }
 })

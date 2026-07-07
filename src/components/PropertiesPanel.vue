@@ -10,6 +10,8 @@ const playback = usePlaybackStore()
 
 const btn = computed(() => boards.selectedButton)
 const track = computed(() => (btn.value ? library.byId(btn.value.trackId) : null))
+const audioTracks = computed(() => library.tracks.filter((t) => t.type !== 'visual'))
+const visuals = computed(() => library.tracks.filter((t) => t.type === 'visual'))
 
 function update(patch) {
   boards.updateButton(btn.value.id, patch)
@@ -33,7 +35,15 @@ function setVolume(v) {
       Traccia
       <select :value="btn.trackId ?? ''" @change="update({ trackId: $event.target.value || null })">
         <option value="">— nessuna —</option>
-        <option v-for="t in library.tracks" :key="t.id" :value="t.id">{{ t.title }}</option>
+        <option v-for="t in audioTracks" :key="t.id" :value="t.id">{{ t.title }}</option>
+      </select>
+    </label>
+
+    <label>
+      Visual (Chromecast)
+      <select :value="btn.visualId ?? ''" @change="update({ visualId: $event.target.value || null })">
+        <option value="">— nessuno —</option>
+        <option v-for="v in visuals" :key="v.id" :value="v.id">{{ v.title }}</option>
       </select>
     </label>
 

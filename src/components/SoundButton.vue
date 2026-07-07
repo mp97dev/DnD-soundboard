@@ -14,27 +14,43 @@ const library = useLibraryStore()
 const playback = usePlaybackStore()
 
 const track = computed(() => library.byId(props.button.trackId))
+const visual = computed(() => library.byId(props.button.visualId))
+
+const isCasting = computed(
+  () => visual.value && playback.activeCastId === visual.value.id
+)
 
 const stateClass = computed(() => {
   const t = track.value
-  if (!t) return 'unassigned'
-  if (t.missing) return 'missing'
-  if (t.type === 'music' && playback.activeMusicId === t.id) return 'active-music'
-  if (t.type === 'ambience' && playback.activeAmbienceIds.includes(t.id)) return 'active-ambience'
-  if (playback.flashingIds.includes(t.id)) return 'flash'
+  const v = visual.value
+  if (!t && !v) return 'unassigned'
+  if (t?.missing || v?.missing) return 'missing'
+  if (t?.type === 'music' && playback.activeMusicId === t.id) return 'active-music'
+  if (t?.type === 'ambience' && playback.activeAmbienceIds.includes(t.id)) return 'active-ambience'
+  if (t && playback.flashingIds.includes(t.id)) return 'flash'
+  if (isCasting.value) return 'active-cast'
   return ''
 })
 
-const thumb = computed(() =>
-  track.value?.thumbnailPath ? mediaUrl(track.value.thumbnailPath) : null
-)
+// Copertina: quella della traccia, altrimenti quella del visual; per le
+// immagini locali senza thumbnail si usa l'immagine stessa
+const thumb = computed(() => {
+  if (track.value?.thumbnailPath) return mediaUrl(track.value.thumbnailPath)
+  const v = visual.value
+  if (!v) return null
+  if (v.thumbnailPath) return mediaUrl(v.thumbnailPath)
+  if (v.mediaPath && /\.(jpe?g|png|webp|gif|bmp)$/i.test(v.mediaPath)) return mediaUrl(v.mediaPath)
+  return null
+})
 
 const isLoading = computed(
   () => track.value && playback.loadingIds.includes(track.value.id)
 )
 
 function onClick() {
-  if (props.interactive && track.value) playback.trigger(track.value)
+  if (props.interactive && (track.value || visual.value)) {
+    playback.triggerButton(props.button, library)
+  }
 }
 </script>
 
@@ -50,10 +66,11 @@ function onClick() {
   >
     <img v-if="thumb" :src="thumb" class="thumb" alt="" />
     <span v-if="isLoading" class="loading-spinner" aria-hidden="true" />
-    <span class="type-dot" :class="track?.type" />
+    <span class="type-dot" :class="track?.type ?? (visual ? 'visual' : null)" />
+    <span v-if="visual" class="cast-badge" :class="{ casting: isCasting }" title="Bottone con visual (Chromecast)">📺</span>
     <span class="label">{{ button.label }}</span>
-    <span v-if="track?.missing" class="warn">file mancante</span>
-    <span v-else-if="!track" class="warn">nessuna traccia</span>
+    <span v-if="track?.missing || visual?.missing" class="warn">file mancante</span>
+    <span v-else-if="!track && !visual" class="warn">nessuna traccia</span>
   </button>
 </template>
 
@@ -105,10 +122,19 @@ function onClick() {
 .type-dot.music { background: var(--music); }
 .type-dot.ambience { background: var(--ambience); }
 .type-dot.oneshot { background: var(--oneshot); }
+.type-dot.visual { background: var(--visual); }
+
+.cast-badge {
+  position: absolute; top: 4px; left: 6px;
+  font-size: 12px; z-index: 1;
+  filter: grayscale(1) opacity(0.6);
+}
+.cast-badge.casting { filter: none; }
 
 /* Stati visivi (spec): blu musica, verde ambience, flash one-shot */
 .active-music { border-color: var(--music); background: color-mix(in srgb, var(--music) 28%, var(--bg-raised)); }
 .active-ambience { border-color: var(--ambience); background: color-mix(in srgb, var(--ambience) 24%, var(--bg-raised)); }
+.active-cast { border-color: var(--visual); background: color-mix(in srgb, var(--visual) 24%, var(--bg-raised)); }
 .flash { animation: flash 0.4s ease-out; }
 @keyframes flash {
   0% { border-color: var(--oneshot); background: color-mix(in srgb, var(--oneshot) 45%, var(--bg-raised)); }

@@ -60,7 +60,26 @@
           out.push(t)
         }
         return out
+      },
+      importLocalVisual: async () => {
+        const files = await pickFiles('image/*,video/*', true)
+        const out = []
+        for (const f of files) {
+          const t = await fetch('/api/library/import?kind=visual', {
+            method: 'POST',
+            headers: { 'X-Filename': encodeURIComponent(f.name), 'Content-Type': 'application/octet-stream' },
+            body: f
+          }).then(json)
+          out.push(t)
+        }
+        return out
       }
+    },
+    cast: {
+      devices: () => get('/api/cast/devices'),
+      status: () => get('/api/cast/status'),
+      show: ({ host, path, title }) => post('/api/cast/show', { host, path, title }),
+      stop: () => post('/api/cast/stop', {})
     },
     settings: {
       get: () => get('/api/settings'),
@@ -92,6 +111,7 @@
     ytdlp: {
       expand: (text) => post('/api/ytdlp/expand', { text }),
       download: (url, jobId) => post('/api/ytdlp/download', { url, jobId }),
+      downloadVisual: (url, jobId) => post('/api/ytdlp/download-visual', { url, jobId }),
       redownload: (track, jobId) => post('/api/ytdlp/redownload', { track, jobId }),
       onProgress: (cb) => {
         progressCbs.add(cb)

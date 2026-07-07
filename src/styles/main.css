@@ -8,6 +8,7 @@
   --music: #3b82f6;      /* blu: musica attiva */
   --ambience: #22c55e;   /* verde: ambience attiva */
   --oneshot: #f59e0b;    /* ambra: flash one-shot */
+  --visual: #a855f7;     /* viola: visual in cast su Chromecast */
   --danger: #ef4444;
   --radius: 10px;
 }

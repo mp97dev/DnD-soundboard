@@ -69,6 +69,17 @@ small [service worker](sw.js) additionally caches the UI shell + thumbnails for
 offline use. On your home LAN (tablet ↔ Proxmox) this is all free anyway; the
 caching matters only if you expose it remotely (e.g. via Tailscale).
 
+## Chromecast
+
+The server also drives Chromecast casting: `GET /api/cast/devices` (mDNS
+discovery), `POST /api/cast/show {host, path, title}`, `POST /api/cast/stop`,
+`GET /api/cast/status`. The cast session runs **in the server process**
+(castv2-client → Default Media Receiver): the server hands the TV a
+`http://<server-ip>:PORT/media/...` URL, so server and Chromecast must be on
+the same LAN. The tablet UI only picks the device and the visual. Note: mDNS
+discovery needs multicast — it won't find devices from inside WSL or across
+VLANs; use the manual-IP option in the UI in that case.
+
 ## What it is NOT
 
 The PC/LXC must be reachable on the network — this is a LAN server, not a

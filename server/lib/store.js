@@ -11,7 +11,9 @@ const SETTINGS_DEFAULTS = {
   version: 1,
   masterVolume: 0.8,
   musicTransition: 'crossfade',
-  transitionDuration: 3000
+  transitionDuration: 3000,
+  castDeviceHost: null,
+  castDeviceName: null
 }
 
 const EXPORT_TYPE = 'dnd-soundboard-export'
@@ -60,7 +62,8 @@ function listLibrary() {
 
   const all = [...builtins, ...index.tracks]
   all.forEach((t) => {
-    t.missing = !fs.existsSync(path.join(DATA_DIR, ...t.audioPath.split('/')))
+    const p = t.audioPath || t.mediaPath
+    t.missing = !p || !fs.existsSync(path.join(DATA_DIR, ...p.split('/')))
   })
   return all
 }
@@ -71,22 +74,24 @@ function saveLibrary(tracks) {
   return true
 }
 
-// Import audio caricato dal browser (un file per chiamata)
-function importLocalFile(buffer, originalName) {
+// Import di un file caricato dal browser (un file per chiamata).
+// kind 'audio' → traccia one-shot; kind 'visual' → immagine/video per il cast.
+function importLocalFile(buffer, originalName, kind = 'audio') {
   const id = 'local_' + crypto.randomBytes(6).toString('hex')
-  const ext = path.extname(originalName) || '.mp3'
+  const ext = path.extname(originalName) || (kind === 'visual' ? '.mp4' : '.mp3')
   const destName = id + ext
   fs.writeFileSync(path.join(DIRS.downloaded, destName), buffer)
-  return {
+  const common = {
     id,
     version: 1,
     title: path.basename(originalName, ext),
-    type: 'oneshot',
     volume: 1,
-    audioPath: `library/downloaded/${destName}`,
     thumbnailPath: null,
     source: { type: 'local' }
   }
+  return kind === 'visual'
+    ? { ...common, type: 'visual', mediaPath: `library/downloaded/${destName}` }
+    : { ...common, type: 'oneshot', audioPath: `library/downloaded/${destName}` }
 }
 
 // ---- Settings ----

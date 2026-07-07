@@ -7,6 +7,7 @@ const registerFilesystemIpc = require('./ipc/filesystem')
 const registerSettingsIpc = require('./ipc/settings')
 const registerYtdlpIpc = require('./ipc/ytdlp')
 const registerConfigIpc = require('./ipc/config')
+const registerCastIpc = require('./ipc/cast')
 
 // WSL: la GPU virtuale causa errori di rendering (popup dei select inclusi)
 function isWSL() {
@@ -67,11 +68,7 @@ app.whenReady().then(() => {
   // lunghi a blocchi di byte range: senza Accept-Ranges/206 riceve ogni volta
   // il file intero da capo, il demuxer scarta e ri-chiede di continuo e
   // l'audio va in stutter (buffer caricato a frazioni di secondo).
-  const MIME_TYPES = {
-    '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav',
-    '.m4a': 'audio/mp4', '.flac': 'audio/flac',
-    '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp'
-  }
+  const { MIME: MIME_TYPES } = require('../server/lib/media')
   // Header CORS: corsEnabled da solo non basta, la risposta deve
   // autorizzare esplicitamente l'origin del renderer
   const mediaHeaders = (extra = {}) => ({ 'Access-Control-Allow-Origin': '*', ...extra })
@@ -141,6 +138,7 @@ app.whenReady().then(() => {
   registerSettingsIpc()
   registerYtdlpIpc()
   registerConfigIpc()
+  registerCastIpc()
 
   createWindow()
 

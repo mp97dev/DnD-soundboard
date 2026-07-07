@@ -142,4 +142,62 @@ async function downloadTrack(url, onProgress = () => {}) {
   }
 }
 
-module.exports = { expandUrls, downloadTrack, extractYoutubeId }
+// Scarica il VIDEO (per il casting su Chromecast): mp4 con H.264 + AAC,
+// il profilo compatibile con tutti i modelli di Chromecast, max 1080p.
+async function downloadVisual(url, onProgress = () => {}) {
+  const ytId = extractYoutubeId(url)
+  if (!ytId) throw new Error('URL YouTube non valido')
+
+  const base = baseArgs()
+
+  onProgress({ phase: 'metadata', percent: null })
+  const meta = JSON.parse(await run([...base, '-J', '--no-playlist', url]))
+
+  const videoName = `${ytId}.mp4`
+  const videoOut = path.join(DIRS.downloaded, videoName)
+  onProgress({ phase: 'video', percent: 0 })
+  await run(
+    [
+      ...base,
+      '-f', 'bestvideo[ext=mp4][vcodec^=avc1][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]/best[height<=1080]',
+      '--merge-output-format', 'mp4',
+      '--no-playlist', '--newline',
+      '-o', videoOut,
+      url
+    ],
+    (line) => {
+      const m = line.match(/^\[download\]\s+([\d.]+)%/)
+      if (m) onProgress({ phase: 'video', percent: Number(m[1]) })
+      else if (line.startsWith('[Merger]')) onProgress({ phase: 'convert', percent: null })
+    }
+  )
+
+  onProgress({ phase: 'thumbnail', percent: null })
+  let thumbnailPath = null
+  try {
+    await run([
+      ...base,
+      '--skip-download', '--write-thumbnail', '--convert-thumbnails', 'jpg',
+      '-o', path.join(DIRS.thumbnails, ytId),
+      url
+    ])
+    if (fs.existsSync(path.join(DIRS.thumbnails, `${ytId}.jpg`))) {
+      thumbnailPath = `library/thumbnails/${ytId}.jpg`
+    }
+  } catch { /* thumbnail facoltativa */ }
+
+  if (!fs.existsSync(videoOut)) throw new Error('Download video fallito')
+
+  return {
+    id: `ytv_${ytId}`,
+    version: 1,
+    title: meta.title || ytId,
+    type: 'visual',
+    volume: 1,
+    mediaPath: `library/downloaded/${videoName}`,
+    thumbnailPath,
+    source: { type: 'youtube', youtubeId: ytId, url }
+  }
+}
+
+module.exports = { expandUrls, downloadTrack, downloadVisual, extractYoutubeId }

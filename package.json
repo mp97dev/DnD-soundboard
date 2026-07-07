@@ -2,14 +2,18 @@
   "name": "dnd-soundboard",
   "version": "0.1.0",
   "description": "Local-first soundboard for tabletop RPG sessions",
+  "author": "Michele Pasetto <michipase@gmail.com>",
+  "homepage": "https://github.com/mp97dev/dnd-soundboard",
   "main": "electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "fetch:ytdlp": "bash scripts/fetch-ytdlp.sh",
     "fetch:ytdlp:win": "bash scripts/fetch-ytdlp.sh --win",
-    "fetch:ffmpeg:win": "bash scripts/fetch-ffmpeg.sh",
+    "fetch:ffmpeg": "bash scripts/fetch-ffmpeg.sh",
+    "fetch:ffmpeg:win": "bash scripts/fetch-ffmpeg.sh --win",
     "build": "npm run fetch:ytdlp:win && npm run fetch:ffmpeg:win && vite build && electron-builder --win",
-    "build:linux": "npm run fetch:ytdlp && vite build && electron-builder --linux",
+    "build:win:zip": "npm run fetch:ytdlp:win && npm run fetch:ffmpeg:win && vite build && electron-builder --win zip",
+    "build:linux": "npm run fetch:ytdlp && npm run fetch:ffmpeg && vite build && electron-builder --linux",
     "build:mac": "npm run fetch:ytdlp && vite build && electron-builder --mac",
     "build:renderer": "vite build",
     "test:e2e": "vite build && npx playwright test",
@@ -27,6 +31,8 @@
     "wait-on": "^8.0.0"
   },
   "dependencies": {
+    "bonjour-service": "^1.4.2",
+    "castv2-client": "^1.2.0",
     "express": "^4.21.0",
     "pinia": "^2.2.0",
     "vue": "^3.4.0",
@@ -36,27 +42,57 @@
     "appId": "com.dnd.soundboard",
     "files": [
       "dist/renderer/**",
-      "electron/**"
+      "electron/**",
+      "server/lib/**"
     ],
     "directories": {
       "output": "dist/out"
     },
     "win": {
-      "target": [{ "target": "dir" }],
+      "target": [
+        {
+          "target": "nsis"
+        },
+        {
+          "target": "zip"
+        }
+      ],
       "extraResources": [
         {
           "from": "bin",
           "to": "bin",
-          "filter": ["yt-dlp.exe", "ffmpeg.exe", "ffprobe.exe"]
+          "filter": [
+            "yt-dlp.exe",
+            "ffmpeg.exe",
+            "ffprobe.exe"
+          ]
         }
       ]
     },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
     "linux": {
+      "target": [
+        {
+          "target": "deb"
+        },
+        {
+          "target": "AppImage"
+        }
+      ],
+      "category": "AudioVideo",
+      "synopsis": "Soundboard for tabletop RPG sessions",
       "extraResources": [
         {
           "from": "bin",
           "to": "bin",
-          "filter": ["yt-dlp"]
+          "filter": [
+            "yt-dlp",
+            "ffmpeg",
+            "ffprobe"
+          ]
         }
       ]
     },
@@ -65,7 +101,9 @@
         {
           "from": "bin",
           "to": "bin",
-          "filter": ["yt-dlp"]
+          "filter": [
+            "yt-dlp"
+          ]
         }
       ]
     }
