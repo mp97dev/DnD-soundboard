@@ -98,8 +98,20 @@ function loadMedia(player, media) {
   })
 }
 
+// Loop nativo del receiver: coda con un solo item e REPEAT_ALL. Nessun gap
+// a fine riproduzione, a differenza del reload manuale su IDLE/FINISHED.
+function loadMediaLooping(player, media) {
+  return new Promise((resolve, reject) => {
+    player.queueLoad(
+      [{ media, autoplay: true }],
+      { repeatMode: 'REPEAT_ALL' },
+      (err, status) => (err ? reject(err) : resolve(status))
+    )
+  })
+}
+
 // Mostra un media sul Chromecast. contentType decide il comportamento:
-// video → loop automatico (ricaricato a fine riproduzione), immagine → resta.
+// video → loop automatico (repeatMode del receiver), immagine → resta.
 async function show({ host, url, contentType, title = '', loop = true }) {
   if (!host) throw new Error('Nessun dispositivo Chromecast selezionato')
   closeSession()
@@ -123,21 +135,27 @@ async function show({ host, url, contentType, title = '', loop = true }) {
   }
 
   const isVideo = contentType.startsWith('video/')
-  if (isVideo && loop) {
-    // Il Default Media Receiver non ha un flag loop: al termine (IDLE/FINISHED)
-    // ricarichiamo lo stesso media. Il file è in cache HTTP → ripartenza rapida.
-    player.on('status', (st) => {
-      if (
-        session && session.player === player &&
-        st.playerState === 'IDLE' && st.idleReason === 'FINISHED'
-      ) {
-        player.load(media, { autoplay: true }, () => { /* best effort */ })
-      }
-    })
-  }
-
   try {
-    await loadMedia(player, media)
+    if (isVideo && loop) {
+      try {
+        await loadMediaLooping(player, media)
+      } catch {
+        // Receiver senza supporto alle code: fallback al reload manuale
+        // quando il video finisce (IDLE/FINISHED). File in cache HTTP →
+        // ripartenza rapida ma con un breve gap.
+        player.on('status', (st) => {
+          if (
+            session && session.player === player &&
+            st.playerState === 'IDLE' && st.idleReason === 'FINISHED'
+          ) {
+            player.load(media, { autoplay: true }, () => { /* best effort */ })
+          }
+        })
+        await loadMedia(player, media)
+      }
+    } else {
+      await loadMedia(player, media)
+    }
   } catch (err) {
     try { client.close() } catch { /* ignora */ }
     throw err
