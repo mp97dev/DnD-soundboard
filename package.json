@@ -40,6 +40,8 @@
   },
   "build": {
     "appId": "com.dnd.soundboard",
+    "productName": "DnD Soundboard",
+    "copyright": "Copyright © 2026 Michele Pasetto",
     "files": [
       "dist/renderer/**",
       "electron/**",
@@ -57,6 +59,10 @@
           "target": "zip"
         }
       ],
+      "artifactName": "${name}-${version}-win.${ext}",
+      "signtoolOptions": {
+        "publisherName": "Michele Pasetto"
+      },
       "extraResources": [
         {
           "from": "bin",
@@ -71,7 +77,9 @@
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": false,
       "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
       "artifactName": "${name}-Setup-${version}.${ext}"
     },
     "linux": {
@@ -83,8 +91,17 @@
           "target": "AppImage"
         }
       ],
+      "executableName": "dnd-soundboard",
+      "artifactName": "${name}-${version}-${arch}.${ext}",
+      "maintainer": "Michele Pasetto <michipase@gmail.com>",
       "category": "AudioVideo",
       "synopsis": "Soundboard for tabletop RPG sessions",
+      "description": "Local-first soundboard for tabletop RPG sessions with Chromecast support",
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "dnd-soundboard"
+        }
+      },
       "extraResources": [
         {
           "from": "bin",
@@ -96,6 +113,9 @@
           ]
         }
       ]
+    },
+    "deb": {
+      "packageCategory": "sound"
     },
     "mac": {
       "extraResources": [

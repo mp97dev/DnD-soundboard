@@ -73,12 +73,23 @@ automatically by CI — see [Releases](#-releases-ci)):
 
 | Platform | File | Notes |
 |---|---|---|
-| Windows | `dnd-soundboard-Setup-<version>.exe` | NSIS installer (choose install dir) |
-| Windows (portable) | `dnd-soundboard-<version>-win.zip` | unzip anywhere, run `dnd-soundboard.exe` |
-| Ubuntu / Debian | `dnd-soundboard_<version>_amd64.deb` | `sudo apt install ./dnd-soundboard_*.deb` — pulls the required system libraries |
-| Other Linux | `dnd-soundboard-<version>.AppImage` | `chmod +x` and run; needs `libfuse2` on Ubuntu 22.04+ |
+| Windows | `dnd-soundboard-Setup-<version>.exe` | NSIS installer (per-user, choose install dir) |
+| Windows (portable) | `dnd-soundboard-<version>-win.zip` | unzip anywhere, run `DnD Soundboard.exe` |
+| Ubuntu / Debian | `dnd-soundboard-<version>-amd64.deb` | `sudo apt install ./dnd-soundboard-*.deb` — pulls the required system libraries |
+| Other Linux | `dnd-soundboard-<version>-x86_64.AppImage` | `chmod +x` and run; needs `libfuse2` on Ubuntu 22.04+ |
 
 All packages bundle `yt-dlp` and a static `ffmpeg` — nothing else to install.
+
+The builds are not code-signed, so Windows SmartScreen shows an "unknown
+publisher" warning on first run. Every release includes a `SHA256SUMS.txt`;
+verify a download with:
+
+```bash
+sha256sum -c --ignore-missing SHA256SUMS.txt
+```
+
+(on Windows: `CertUtil -hashfile dnd-soundboard-Setup-<version>.exe SHA256`
+and compare.)
 
 ---
 
@@ -317,23 +328,72 @@ node scripts/screenshots.cjs   # self-contained demo dataset, no downloads
 
 ## 🤖 Releases (CI)
 
-Pushing a tag `v*` triggers the **release workflow**
-([.github/workflows/release.yml](.github/workflows/release.yml)):
+Pushing a tag `v*` (or publishing a release from an existing tag) triggers the
+**release workflow** ([.github/workflows/release.yml](.github/workflows/release.yml)):
 
 1. builds Windows (NSIS installer + portable zip) on a Windows runner;
 2. builds Linux (`.deb` + AppImage) on an Ubuntu runner;
 3. publishes a GitHub Release named after the tag, with the **commit history
-   since the previous tag as changelog** and all artifacts attached.
+   since the previous tag as changelog**, all artifacts and a `SHA256SUMS.txt`
+   attached. (When triggered by publishing a release manually, hand-written
+   release notes are kept.)
 
-To cut a release:
+Windows code signing is optional: if the `WINDOWS_CSC_LINK` (base64 `.pfx`)
+and `WINDOWS_CSC_KEY_PASSWORD` secrets are configured, electron-builder signs the
+installer and executables automatically; otherwise they ship unsigned.
 
-```bash
-npm version 0.2.0          # bumps package.json + creates tag v0.2.0
-git push --follow-tags
-```
+### How to create a new release
 
-You can also run the workflow manually (workflow_dispatch) to get build
-artifacts without publishing a release.
+1. **Start from a clean, up-to-date `main`:**
+
+   ```bash
+   git checkout main && git pull
+   git status        # must be clean
+   ```
+
+2. **Bump the version and create the tag.** `npm version` updates
+   `package.json`/`package-lock.json`, commits, and creates the matching
+   `v*` tag in one step:
+
+   ```bash
+   npm version patch          # 0.1.1 → 0.1.2  (bug fixes)
+   npm version minor          # 0.1.1 → 0.2.0  (new features)
+   npm version major          # 0.1.1 → 1.0.0  (breaking changes)
+   # or an explicit version:
+   npm version 0.2.0
+   ```
+
+   > Don't create the tag by hand: the workflow **fails the release if the
+   > tag doesn't match `package.json`'s version**, so the artifacts can never
+   > carry the wrong version number.
+
+3. **Push the commit together with the tag:**
+
+   ```bash
+   git push --follow-tags
+   ```
+
+4. **Wait for the workflow** (Actions → *Release*, ~5–10 min). It builds
+   Windows and Linux in parallel, then publishes the GitHub Release with the
+   four artifacts, `SHA256SUMS.txt`, and the commit log since the previous
+   tag as changelog.
+
+5. **Check the release page** and edit the generated notes if needed —
+   later re-runs won't overwrite hand-written notes.
+
+**Alternative — release from the GitHub UI:** *Releases → Draft a new
+release*, create a new tag `v<version>` on `main` (make sure `package.json`
+already has that version), write the notes, and publish. The workflow then
+builds and attaches the artifacts to that release, keeping your notes.
+
+**Dry run:** trigger the workflow manually (Actions → *Release* → *Run
+workflow*) to get the build artifacts from the run's page without tagging or
+publishing anything.
+
+**If a release went wrong** (bad build, wrong commit): delete the GitHub
+release and the tag (`git push origin :refs/tags/v0.2.0`), fix, and start
+over — or simply publish a new patch release, which is usually the safer
+option once users may have downloaded it.
 
 ---
 
