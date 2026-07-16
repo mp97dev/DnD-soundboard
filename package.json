@@ -1,6 +1,6 @@
 {
   "name": "dnd-soundboard",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Local-first soundboard for tabletop RPG sessions",
   "author": "Michele Pasetto <michipase@gmail.com>",
   "homepage": "https://github.com/mp97dev/dnd-soundboard",
