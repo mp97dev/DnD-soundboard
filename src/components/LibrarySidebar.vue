@@ -1,9 +1,32 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useLibraryStore } from '../stores/library'
+import { mediaUrl } from '../media'
 
 const library = useLibraryStore()
 const ytUrl = ref('')
+
+// Download annullabili (in coda o in corso)
+const pendingJobCount = computed(
+  () => library.jobs.filter((j) => j.status !== 'error').length
+)
+
+// Sezioni richiudibili: con librerie grandi la lista è difficile da navigare
+const collapsed = reactive({})
+const toggleSection = (type) => (collapsed[type] = !collapsed[type])
+
+// Mini-preview: thumbnail YouTube, o l'immagine stessa per i visual locali
+const IMG_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
+function trackThumb(t) {
+  if (t.thumbnailPath) return mediaUrl(t.thumbnailPath)
+  if (t.mediaPath && IMG_RE.test(t.mediaPath)) return mediaUrl(t.mediaPath)
+  return null
+}
+// 🎬 video / 🖼️ immagine per distinguere i visual nella lista
+function visualIcon(t) {
+  if (t.type !== 'visual') return null
+  return IMG_RE.test(t.mediaPath || '') ? '🖼️' : '🎬'
+}
 
 const phaseLabels = {
   metadata: 'Recupero informazioni…',
@@ -83,17 +106,35 @@ function onDragStart(e, track) {
         >🎬</button>
       </div>
     </div>
+    <p v-if="library.expanding" class="dim">Lettura playlist…</p>
+    <div v-if="library.pendingBulk" class="bulk-confirm">
+      <p class="bulk-msg">
+        La playlist contiene <strong>{{ library.pendingBulk.entries.length }}</strong> video.
+        Scaricarli tutti?
+      </p>
+      <div class="bulk-btns">
+        <button class="primary" @click="library.confirmBulk()">Scarica tutti</button>
+        <button v-if="library.pendingBulk.single" @click="library.confirmBulk(true)">
+          Solo questo video
+        </button>
+        <button @click="library.cancelBulk()">Annulla</button>
+      </div>
+    </div>
     <div v-if="library.jobs.length" class="jobs">
+      <button
+        v-if="pendingJobCount > 1"
+        class="cancel-all"
+        @click="library.cancelAllJobs()"
+      >✕ Annulla tutti i download ({{ pendingJobCount }})</button>
       <div v-for="job in library.jobs" :key="job.id" class="job" :class="{ failed: job.status === 'error' }">
         <div class="job-row">
           <span class="job-title" :title="job.title">{{ job.title }}</span>
           <span v-if="jobPct(job) !== null" class="job-pct">{{ jobPct(job) }}%</span>
           <button
-            v-if="job.status === 'error'"
             class="job-dismiss"
-            title="Rimuovi"
-            aria-label="Rimuovi"
-            @click="library.dismissJob(job.id)"
+            :title="job.status === 'error' ? 'Rimuovi' : 'Annulla download'"
+            :aria-label="job.status === 'error' ? 'Rimuovi' : 'Annulla download'"
+            @click="job.status === 'error' ? library.dismissJob(job.id) : library.cancelJob(job.id)"
           >×</button>
         </div>
         <span class="job-label" :class="{ 'job-error': job.status === 'error' }">{{ jobLabel(job) }}</span>
@@ -105,8 +146,12 @@ function onDragStart(e, track) {
         </div>
       </div>
     </div>
-    <button class="import-local" @click="library.importLocal()">+ Importa audio locale</button>
-    <button class="import-local" @click="library.importLocalVisual()">+ Importa immagine/video</button>
+    <button class="import-local" :disabled="library.importing" @click="library.importLocal()">
+      {{ library.importing ? '⏳ Importazione…' : '+ Importa audio locale' }}
+    </button>
+    <button class="import-local" :disabled="library.importing" @click="library.importLocalVisual()">
+      {{ library.importing ? '⏳ Importazione…' : '+ Importa immagine/video' }}
+    </button>
     <button
       v-if="library.missingDownloadable.length"
       class="import-local update-library"
@@ -119,22 +164,30 @@ function onDragStart(e, track) {
 
     <div class="sections">
       <section v-for="s in sections" :key="s.type">
-        <h4>{{ s.label }}</h4>
-        <div
-          v-for="t in library.byType(s.type)"
-          :key="t.id"
-          class="track"
-          :class="{ missing: t.missing }"
-          draggable="true"
-          @dragstart="onDragStart($event, t)"
-        >
-          <span class="type-dot" :class="t.type" />
-          <span class="title" :title="t.missing ? `${t.title} (file mancante)` : t.title">
-            {{ t.title }}
-          </span>
-          <span v-if="t.missing" class="missing-badge" title="File audio mancante">⚠</span>
-        </div>
-        <p v-if="!library.byType(s.type).length" class="dim">Vuoto</p>
+        <h4 class="sec-head" @click="toggleSection(s.type)">
+          <span class="chev">{{ collapsed[s.type] ? '▸' : '▾' }}</span>
+          {{ s.label }}
+          <span class="sec-count">{{ library.byType(s.type).length }}</span>
+        </h4>
+        <template v-if="!collapsed[s.type]">
+          <div
+            v-for="t in library.byType(s.type)"
+            :key="t.id"
+            class="track"
+            :class="{ missing: t.missing }"
+            draggable="true"
+            @dragstart="onDragStart($event, t)"
+          >
+            <img v-if="trackThumb(t)" :src="trackThumb(t)" class="mini-thumb" alt="" loading="lazy" />
+            <span v-else class="type-dot" :class="t.type" />
+            <span v-if="visualIcon(t)" class="visual-kind">{{ visualIcon(t) }}</span>
+            <span class="title" :title="t.missing ? `${t.title} (file mancante)` : t.title">
+              {{ t.title }}
+            </span>
+            <span v-if="t.missing" class="missing-badge" title="File audio mancante">⚠</span>
+          </div>
+          <p v-if="!library.byType(s.type).length" class="dim">Vuoto</p>
+        </template>
       </section>
     </div>
   </aside>
@@ -150,6 +203,15 @@ function onDragStart(e, track) {
 }
 h3 { margin: 0; font-size: 15px; }
 h4 { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.6px; }
+.sec-head { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 4px; }
+.sec-head:hover { color: var(--text); }
+.chev { width: 12px; flex-shrink: 0; }
+.sec-count { margin-left: auto; font-weight: 400; }
+.mini-thumb {
+  width: 28px; height: 28px; flex-shrink: 0;
+  object-fit: cover; border-radius: 4px;
+}
+.visual-kind { flex-shrink: 0; font-size: 12px; }
 .search { width: 100%; }
 .import { display: flex; gap: 6px; align-items: stretch; }
 .import-btns { display: flex; flex-direction: column; gap: 4px; }
@@ -162,6 +224,16 @@ h4 { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; color: var(-
   display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0; width: 34px;
 }
+.bulk-confirm {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg-raised);
+}
+.bulk-msg { margin: 0; font-size: 13px; }
+.bulk-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.bulk-btns button { font-size: 12px; }
+.cancel-all { font-size: 12px; color: var(--danger); }
 .jobs { display: flex; flex-direction: column; gap: 8px; }
 .job { display: flex; flex-direction: column; gap: 3px; }
 .job-row {

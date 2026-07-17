@@ -12,8 +12,9 @@ const { WebSocketServer } = require('ws')
 const store = require('./lib/store')
 const ytdlp = require('./lib/ytdlp')
 const cast = require('./lib/cast')
-const { serveMedia, contentTypeFor } = require('./lib/media')
-const { DATA_DIR, RENDERER_DIR, ensureDataDirs } = require('./lib/paths')
+const { serveMedia, contentTypeFor, BLANK_PNG } = require('./lib/media')
+const { ensureLoopPlaylist } = require('./lib/hlsloop')
+const { DATA_DIR, RENDERER_DIR, BIN_DIR, ensureDataDirs } = require('./lib/paths')
 
 const PORT = Number(process.env.PORT) || 8080
 const HOST = process.env.HOST || '0.0.0.0'
@@ -30,6 +31,21 @@ function broadcast(msg) {
   wss.clients.forEach((c) => {
     if (c.readyState === 1) c.send(data)
   })
+}
+
+// yt-dlp con --newline emette decine di righe al secondo: senza throttle ogni
+// riga diventa un messaggio WebSocket + re-render nel browser. Inoltra solo i
+// cambi di fase o di punto percentuale intero.
+function throttleProgress(send) {
+  let lastPhase
+  let lastPct
+  return (p) => {
+    const pct = p.percent == null ? null : Math.floor(p.percent)
+    if (p.phase === lastPhase && pct === lastPct) return
+    lastPhase = p.phase
+    lastPct = pct
+    send(p)
+  }
 }
 
 // ---------- API ----------
@@ -71,7 +87,7 @@ app.post('/api/ytdlp/expand', async (req, res) => {
 app.post('/api/ytdlp/download', async (req, res) => {
   const { url, jobId } = req.body || {}
   try {
-    const track = await ytdlp.downloadTrack(url, (p) => broadcast({ type: 'progress', jobId, ...p }))
+    const track = await ytdlp.downloadTrack(url, throttleProgress((p) => broadcast({ type: 'progress', jobId, ...p })), jobId)
     res.json(track)
   } catch (e) {
     res.status(500).json({ error: e.message })
@@ -80,11 +96,14 @@ app.post('/api/ytdlp/download', async (req, res) => {
 app.post('/api/ytdlp/download-visual', async (req, res) => {
   const { url, jobId } = req.body || {}
   try {
-    const track = await ytdlp.downloadVisual(url, (p) => broadcast({ type: 'progress', jobId, ...p }))
+    const track = await ytdlp.downloadVisual(url, throttleProgress((p) => broadcast({ type: 'progress', jobId, ...p })), jobId)
     res.json(track)
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
+})
+app.post('/api/ytdlp/cancel', (req, res) => {
+  res.json({ cancelled: ytdlp.cancel(req.body?.jobId) })
 })
 app.post('/api/ytdlp/redownload', async (req, res) => {
   const { track, jobId } = req.body || {}
@@ -93,9 +112,8 @@ app.post('/api/ytdlp/redownload', async (req, res) => {
   }
   try {
     const dl = track.type === 'visual' ? ytdlp.downloadVisual : ytdlp.downloadTrack
-    const t = await dl(track.source.url, (p) =>
-      broadcast({ type: 'progress', jobId, ...p })
-    )
+    const t = await dl(track.source.url, throttleProgress((p) =>
+      broadcast({ type: 'progress', jobId, ...p })), jobId)
     res.json(t)
   } catch (e) {
     res.status(500).json({ error: e.message })
@@ -116,16 +134,56 @@ app.post('/api/cast/show', async (req, res) => {
     const reqHost = String(req.headers.host || '').split(':')[0]
     const usable = reqHost && !['localhost', '127.0.0.1'].includes(reqHost) ? reqHost : cast.lanIp()
     if (!usable) throw new Error('Impossibile determinare l\'IP LAN del server')
-    const url = `http://${usable}:${PORT}/media/${mediaPath.split('/').map(encodeURIComponent).join('/')}`
-    res.json(await cast.show({ host, url, contentType: contentTypeFor(mediaPath), title }))
+
+    // Video → HLS con playlist che ripete i segmenti: loop senza overlay né
+    // reload sul receiver. Se la segmentazione non riesce, mp4 diretto.
+    let rel = mediaPath
+    let contentType = contentTypeFor(mediaPath)
+    if (contentType.startsWith('video/')) {
+      const ffmpegLocal = path.join(BIN_DIR, 'ffmpeg')
+      const hls = await ensureLoopPlaylist({
+        dataDir: DATA_DIR,
+        mediaRel: mediaPath,
+        ffmpegPath: fs.existsSync(ffmpegLocal) ? ffmpegLocal : 'ffmpeg'
+      })
+      if (hls) {
+        rel = hls
+        contentType = 'application/vnd.apple.mpegurl'
+      }
+    }
+    const url = `http://${usable}:${PORT}/media/${rel.split('/').map(encodeURIComponent).join('/')}`
+    res.json(await cast.show({ host, url, contentType, title }))
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+app.post('/api/cast/blank', async (req, res) => {
+  try {
+    const reqHost = String(req.headers.host || '').split(':')[0]
+    const usable = reqHost && !['localhost', '127.0.0.1'].includes(reqHost) ? reqHost : cast.lanIp()
+    if (!usable) throw new Error('Impossibile determinare l\'IP LAN del server')
+    res.json(await cast.blank({ url: `http://${usable}:${PORT}/blank.png` }))
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
 })
 
 // ---------- Media (con supporto Range) ----------
+// Preflight CORS: il receiver Chromecast carica gli HLS via XHR e può
+// mandare OPTIONS (header Range non safelisted)
+app.options(/^\/media\/(.+)/, (_req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, HEAD',
+    'Access-Control-Allow-Headers': 'Range, Content-Type'
+  }).sendStatus(204)
+})
 app.get(/^\/media\/(.+)/, (req, res) => serveMedia(req, res, req.params[0], DATA_DIR))
 app.head(/^\/media\/(.+)/, (req, res) => serveMedia(req, res, req.params[0], DATA_DIR))
+app.get('/blank.png', (_req, res) => {
+  res.set({ 'Content-Type': 'image/png', 'Content-Length': BLANK_PNG.length }).end(BLANK_PNG)
+})
 
 // ---------- Shell + asset statici ----------
 // index.html della build, con iniettati il media base e il web shim PRIMA del

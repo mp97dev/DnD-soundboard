@@ -79,6 +79,7 @@
       devices: () => get('/api/cast/devices'),
       status: () => get('/api/cast/status'),
       show: ({ host, path, title }) => post('/api/cast/show', { host, path, title }),
+      blank: () => post('/api/cast/blank', {}),
       stop: () => post('/api/cast/stop', {})
     },
     settings: {
@@ -113,6 +114,7 @@
       download: (url, jobId) => post('/api/ytdlp/download', { url, jobId }),
       downloadVisual: (url, jobId) => post('/api/ytdlp/download-visual', { url, jobId }),
       redownload: (track, jobId) => post('/api/ytdlp/redownload', { track, jobId }),
+      cancel: (jobId) => post('/api/ytdlp/cancel', { jobId }),
       onProgress: (cb) => {
         progressCbs.add(cb)
         return () => progressCbs.delete(cb)

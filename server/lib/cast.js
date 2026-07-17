@@ -39,7 +39,17 @@ function listDevices() {
   startDiscovery()
   // update() rilancia la query mDNS: i dispositivi apparsi dopo l'avvio
   // rispondono alla prossima chiamata
-  try { browser.update() } catch { /* ignora */ }
+  try {
+    browser.update()
+  } catch {
+    // Socket mDNS morta (rete caduta/cambiata, es. blackout del router):
+    // butta via tutto e riparti con una discovery nuova
+    try { bonjour.destroy() } catch { /* già morta */ }
+    bonjour = null
+    browser = null
+    devices.clear()
+    startDiscovery()
+  }
   return [...devices.values()]
 }
 
@@ -62,7 +72,22 @@ function lanIp() {
 }
 
 // ---- Sessione di cast ----
-let session = null // { client, player, host }
+let session = null // { client, player, host, title }
+let lastShow = null // ultimi argomenti di show(): servono per la riconnessione
+let reconnect = null // { startedAt, timer } quando la sessione è caduta
+
+const CONNECT_TIMEOUT_MS = 8000
+const RECONNECT_INTERVAL_MS = 5000
+const RECONNECT_MAX_MS = 10 * 60 * 1000 // poi molliamo (TV spenta di proposito)
+
+// show/stop/blank/riconnessioni serializzate: due load concorrenti sulla
+// stessa TV lasciano socket appese e receiver fantasma
+let chain = Promise.resolve()
+function queued(fn) {
+  const p = chain.then(fn)
+  chain = p.then(() => {}, () => {})
+  return p
+}
 
 function closeSession() {
   if (!session) return
@@ -70,49 +95,132 @@ function closeSession() {
   session = null
 }
 
+// Riconnessione automatica: quando la sessione cade (blackout, TV che perde
+// il WiFi) riprova ogni pochi secondi a rimostrare l'ultimo media, finché la
+// TV non torna o l'utente non fa stop.
+function scheduleReconnect() {
+  if (!lastShow || reconnect) return
+  const startedAt = Date.now()
+  const attempt = () => {
+    if (!reconnect) return
+    if (Date.now() - startedAt > RECONNECT_MAX_MS) {
+      reconnect = null
+      return
+    }
+    queued(async () => {
+      if (!reconnect || !lastShow) return
+      try {
+        await doShow(lastShow)
+        reconnect = null
+      } catch {
+        if (reconnect) reconnect.timer = setTimeout(attempt, RECONNECT_INTERVAL_MS)
+      }
+    })
+  }
+  reconnect = { startedAt, timer: setTimeout(attempt, RECONNECT_INTERVAL_MS) }
+}
+
+function cancelReconnect() {
+  if (!reconnect) return
+  clearTimeout(reconnect.timer)
+  reconnect = null
+}
+
 function connect(host) {
   return new Promise((resolve, reject) => {
     const client = new Client()
+    let settled = false
+    // castv2 non ha un timeout di connessione: senza questo, una TV
+    // irraggiungibile lascia la UI appesa per minuti (timeout TCP)
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      try { client.close() } catch { /* mai aperta */ }
+      reject(new Error(`TV non raggiungibile (${host})`))
+    }, CONNECT_TIMEOUT_MS)
     client.on('error', (err) => {
-      // Connessione caduta (TV spenta, rete): la sessione non è più valida
-      if (session && session.client === client) closeSession()
-      reject(err)
+      // Connessione caduta (TV spenta, rete): la sessione non è più valida.
+      // Se stavamo mostrando qualcosa, parte la riconnessione automatica.
+      if (session && session.client === client) {
+        closeSession()
+        scheduleReconnect()
+      }
+      if (!settled) {
+        settled = true
+        clearTimeout(timer)
+        reject(err)
+      }
     })
-    client.connect(host, () => resolve(client))
+    client.connect(host, () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(client)
+    })
   })
+}
+
+// Se la socket muore tra connect e launch/load, i callback castv2 non
+// arrivano mai: ogni passo ha un tetto massimo per non appendere la UI
+function withTimeout(promise, ms, msg) {
+  let t
+  const timeout = new Promise((_, reject) => {
+    t = setTimeout(() => reject(new Error(msg)), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(t))
 }
 
 function launch(client) {
-  return new Promise((resolve, reject) => {
-    client.launch(DefaultMediaReceiver, (err, player) =>
-      err ? reject(err) : resolve(player)
-    )
-  })
+  return withTimeout(
+    new Promise((resolve, reject) => {
+      client.launch(DefaultMediaReceiver, (err, player) =>
+        err ? reject(err) : resolve(player)
+      )
+    }),
+    10000,
+    'La TV non ha avviato il receiver (timeout)'
+  )
 }
 
 function loadMedia(player, media) {
-  return new Promise((resolve, reject) => {
-    player.load(media, { autoplay: true }, (err, status) =>
-      err ? reject(err) : resolve(status)
-    )
-  })
+  return withTimeout(
+    new Promise((resolve, reject) => {
+      player.load(media, { autoplay: true }, (err, status) =>
+        err ? reject(err) : resolve(status)
+      )
+    }),
+    15000,
+    'La TV non ha caricato il media (timeout)'
+  )
 }
 
 // Loop nativo del receiver: coda con un solo item e REPEAT_ALL. Nessun gap
 // a fine riproduzione, a differenza del reload manuale su IDLE/FINISHED.
 function loadMediaLooping(player, media) {
-  return new Promise((resolve, reject) => {
-    player.queueLoad(
-      [{ media, autoplay: true }],
-      { repeatMode: 'REPEAT_ALL' },
-      (err, status) => (err ? reject(err) : resolve(status))
-    )
-  })
+  return withTimeout(
+    new Promise((resolve, reject) => {
+      player.queueLoad(
+        [{ media, autoplay: true }],
+        { repeatMode: 'REPEAT_ALL' },
+        (err, status) => (err ? reject(err) : resolve(status))
+      )
+    }),
+    15000,
+    'La TV non ha caricato il media (timeout)'
+  )
 }
 
 // Mostra un media sul Chromecast. contentType decide il comportamento:
 // video → loop automatico (repeatMode del receiver), immagine → resta.
-async function show({ host, url, contentType, title = '', loop = true }) {
+function show(args) {
+  return queued(() => {
+    cancelReconnect()
+    lastShow = args
+    return doShow(args)
+  })
+}
+
+async function doShow({ host, url, contentType, title = '', loop = true }) {
   if (!host) throw new Error('Nessun dispositivo Chromecast selezionato')
   closeSession()
 
@@ -164,23 +272,58 @@ async function show({ host, url, contentType, title = '', loop = true }) {
   return { casting: true, title }
 }
 
-async function stop() {
-  if (!session) return { casting: false }
-  const { client, player } = session
-  session = null
-  await new Promise((resolve) => {
-    try {
-      client.stop(player, () => resolve())
-    } catch {
-      resolve()
+// Schermo nero SENZA chiudere la sessione: usato da "Ferma tutto" così la TV
+// resta connessa e pronta per il prossimo visual. url punta a /blank.png del
+// nostro media server.
+function blank({ url }) {
+  return queued(async () => {
+    // D'ora in poi l'ultimo media è il nero: se la sessione cade e si
+    // riconnette, torna al nero e non al visual fermato
+    if (lastShow) lastShow = { ...lastShow, url, contentType: 'image/png', title: '', loop: false }
+    if (!session) return { casting: false, reconnecting: !!reconnect }
+    const media = {
+      contentId: url,
+      contentType: 'image/png',
+      streamType: 'BUFFERED',
+      metadata: { type: 0, metadataType: 0, title: '' }
     }
+    try {
+      await loadMedia(session.player, media)
+      session.title = ''
+    } catch {
+      // Sessione morta: la chiude, ci penserà la riconnessione (→ nero)
+      closeSession()
+      scheduleReconnect()
+    }
+    return { casting: !!session, title: '', reconnecting: !!reconnect }
   })
-  try { client.close() } catch { /* ignora */ }
-  return { casting: false }
+}
+
+function stop() {
+  return queued(async () => {
+    cancelReconnect()
+    lastShow = null
+    if (!session) return { casting: false }
+    const { client, player } = session
+    session = null
+    await new Promise((resolve) => {
+      try {
+        client.stop(player, () => resolve())
+      } catch {
+        resolve()
+      }
+    })
+    try { client.close() } catch { /* ignora */ }
+    return { casting: false }
+  })
 }
 
 function status() {
-  return { casting: !!session, title: session?.title ?? null }
+  return {
+    casting: !!session,
+    title: session?.title ?? null,
+    reconnecting: !!reconnect
+  }
 }
 
-module.exports = { listDevices, lanIp, show, stop, status }
+module.exports = { listDevices, lanIp, show, blank, stop, status }

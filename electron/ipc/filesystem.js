@@ -1,8 +1,33 @@
-const { ipcMain, dialog } = require('electron')
+const { ipcMain, dialog, app } = require('electron')
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
+const { spawn } = require('child_process')
 const { DIRS, LIBRARY_INDEX, DATA_DIR } = require('../paths')
+
+// ffmpeg bundled (extraResource / ./bin in dev) o nel PATH di sistema
+function ffmpegPath() {
+  const dir = app.isPackaged
+    ? path.join(process.resourcesPath, 'bin')
+    : path.join(__dirname, '..', '..', 'bin')
+  const bin = path.join(dir, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
+  return fs.existsSync(bin) ? bin : 'ffmpeg'
+}
+
+// Thumbnail per i video importati da file locale (best effort): un frame a
+// t=1s, così in libreria e sui bottoni si vede un'anteprima come per YouTube
+function makeVideoThumb(src, id) {
+  const out = path.join(DIRS.thumbnails, `${id}.jpg`)
+  return new Promise((resolve) => {
+    const proc = spawn(ffmpegPath(), [
+      '-y', '-ss', '1', '-i', src, '-frames:v', '1', '-vf', 'scale=320:-2', out
+    ], { windowsHide: true })
+    proc.on('error', () => resolve(null))
+    proc.on('close', (code) =>
+      resolve(code === 0 && fs.existsSync(out) ? `library/thumbnails/${id}.jpg` : null)
+    )
+  })
+}
 
 // SOUNDBOARD_BUILTIN_TRACKS: override usato dai test e2e
 const BUILTIN_TRACKS_FILE =
@@ -81,12 +106,15 @@ module.exports = function registerFilesystemIpc() {
     })
     if (canceled) return []
 
-    return filePaths.map((src) => {
+    // Copie asincrone: copyFileSync sul main process congela l'intera app
+    // (UI compresa) quando si importano molti file grossi in un colpo solo
+    const out = []
+    for (const src of filePaths) {
       const id = 'local_' + crypto.randomBytes(6).toString('hex')
       const ext = path.extname(src)
       const destName = id + ext
-      fs.copyFileSync(src, path.join(DIRS.downloaded, destName))
-      return {
+      await fs.promises.copyFile(src, path.join(DIRS.downloaded, destName))
+      out.push({
         id,
         version: 1,
         title: path.basename(src, ext),
@@ -95,8 +123,9 @@ module.exports = function registerFilesystemIpc() {
         audioPath: `library/downloaded/${destName}`,
         thumbnailPath: null,
         source: { type: 'local' }
-      }
-    })
+      })
+    }
+    return out
   })
 
   // ---- Import visual locale (immagini/video per il cast) ----
@@ -110,21 +139,27 @@ module.exports = function registerFilesystemIpc() {
     })
     if (canceled) return []
 
-    return filePaths.map((src) => {
+    // Come per l'audio: mai copyFileSync qui, i video da 40-100MB bloccano
+    // il main process per decine di secondi
+    const out = []
+    for (const src of filePaths) {
       const id = 'local_' + crypto.randomBytes(6).toString('hex')
       const ext = path.extname(src)
       const destName = id + ext
-      fs.copyFileSync(src, path.join(DIRS.downloaded, destName))
-      return {
+      const dest = path.join(DIRS.downloaded, destName)
+      await fs.promises.copyFile(src, dest)
+      const isVideo = /\.(mp4|m4v|webm)$/i.test(ext)
+      out.push({
         id,
         version: 1,
         title: path.basename(src, ext),
         type: 'visual',
         volume: 1,
         mediaPath: `library/downloaded/${destName}`,
-        thumbnailPath: null,
+        thumbnailPath: isVideo ? await makeVideoThumb(dest, id) : null,
         source: { type: 'local' }
-      }
-    })
+      })
+    }
+    return out
   })
 }

@@ -82,20 +82,24 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1 } = {}) {
   }
 }
 
+// Fade esponenziali (setTargetAtTime) invece di rampe lineari: con la rampa
+// lineare la traccia entrante resta quasi inudibile per metà crossfade
+// ("cambio canzone lento"); l'attacco esponenziale la porta al ~75% già a un
+// terzo della durata, e il decay suona più naturale di un taglio lineare.
 function fadeOutAndStop(voice, durationMs) {
   const now = ctx.currentTime
-  const dur = Math.max(durationMs, 1) / 1000
+  const tau = Math.max(durationMs, 1) / 1000 / 4 // a 4τ il decay è al ~98%
   voice.gain.gain.cancelScheduledValues(now)
   voice.gain.gain.setValueAtTime(voice.gain.gain.value, now)
-  voice.gain.gain.linearRampToValueAtTime(0, now + dur)
+  voice.gain.gain.setTargetAtTime(0, now, tau)
   voice.stop(durationMs)
 }
 
 function fadeIn(voice, targetVolume, durationMs) {
   const now = ctx.currentTime
-  const dur = Math.max(durationMs, 1) / 1000
+  const tau = Math.max(durationMs, 1) / 1000 / 4
   voice.gain.gain.setValueAtTime(0.0001, now)
-  voice.gain.gain.linearRampToValueAtTime(targetVolume, now + dur)
+  voice.gain.gain.setTargetAtTime(targetVolume, now, tau)
 }
 
 // ---- Stato canali ----

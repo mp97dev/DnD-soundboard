@@ -43,6 +43,8 @@ onMounted(async () => {
   refreshCastDevices()
   // la discovery mDNS impiega qualche secondo a popolare la lista
   setTimeout(refreshCastDevices, 4000)
+  // Stato cast: mostra la riconnessione automatica quando la TV si perde
+  setInterval(() => playback.syncCastStatus(), 5000)
   // All'avvio nessuno passa da openBoard: il check dei file mancanti
   // della board iniziale va fatto qui (in background)
   const trackIds =
@@ -115,6 +117,7 @@ async function importConfig() {
 
       <span v-if="ioMsg" class="io-msg">{{ ioMsg }}</span>
       <span v-if="playback.castError" class="io-msg cast-error">{{ playback.castError }}</span>
+      <span v-else-if="playback.castReconnecting" class="io-msg cast-error">📡 TV persa: riconnessione automatica…</span>
 
       <div class="cast" title="Chromecast su cui mostrare i visual">
         <span class="dim">📺</span>
@@ -128,8 +131,8 @@ async function importConfig() {
           <option value="__manual">IP manuale…</option>
         </select>
         <button
-          v-if="playback.activeCastId"
-          title="Interrompi il cast"
+          v-if="playback.activeCastId || playback.castConnected || playback.castReconnecting"
+          title="Disconnetti la TV"
           @click="playback.stopCast()"
         >✕</button>
       </div>

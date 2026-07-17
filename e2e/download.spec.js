@@ -62,9 +62,33 @@ test('download playlist: gli URL vengono espansi', async () => {
     .fill('https://www.youtube.com/playlist?list=PLfake')
   await page.getByRole('button', { name: 'Scarica audio da YouTube' }).click()
 
+  // Le playlist chiedono conferma prima di accodare i download
+  await expect(page.locator('.bulk-confirm')).toContainText('2')
+  await page.getByRole('button', { name: 'Scarica tutti' }).click()
+
   // La playlist finta espande a due video
   await expect(page.locator('.track .title')).toHaveCount(2, { timeout: 20_000 })
   await expect(page.locator('.error')).toHaveCount(0)
+
+  await app.close()
+})
+
+test('download playlist: annulla non accoda nulla', async () => {
+  const { app, page } = await launchApp()
+  await createBoard(page, 'Test')
+  await page.getByRole('button', { name: /Edit/ }).click()
+
+  await page
+    .getByPlaceholder(YT_PLACEHOLDER)
+    .fill('https://www.youtube.com/playlist?list=PLfake')
+  await page.getByRole('button', { name: 'Scarica audio da YouTube' }).click()
+
+  await expect(page.locator('.bulk-confirm')).toBeVisible()
+  await page.getByRole('button', { name: 'Annulla', exact: true }).click()
+
+  await expect(page.locator('.bulk-confirm')).toHaveCount(0)
+  await expect(page.locator('.job')).toHaveCount(0)
+  await expect(page.locator('.track .title')).toHaveCount(0)
 
   await app.close()
 })

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, protocol } = require('electron')
+const { app, BrowserWindow, Menu, protocol } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { Readable } = require('stream')
@@ -38,6 +38,9 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 function createWindow() {
+  // Niente barra File/Edit/View: è una soundboard, non un editor di testo.
+  // (Su macOS il menu applicazione resta, è la convenzione della piattaforma.)
+  if (process.platform !== 'darwin') Menu.setApplicationMenu(null)
   const win = new BrowserWindow({
     width: 1400,
     height: 900,

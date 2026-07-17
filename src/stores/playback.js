@@ -9,7 +9,9 @@ export const usePlaybackStore = defineStore('playback', {
     flashingIds: [], // one-shot in flash
     loadingIds: [], // tracce in caricamento (apertura stream / decode one-shot)
     activeCastId: null, // visual attualmente in cast sul Chromecast
-    castError: null
+    castError: null,
+    castReconnecting: false, // il backend sta riagganciando la TV persa
+    castConnected: false // sessione TV viva (anche se a schermo nero)
   }),
   actions: {
     // Bottone della board: può avere una traccia audio, un visual da castare,
@@ -37,15 +39,36 @@ export const usePlaybackStore = defineStore('playback', {
           title: visual.title
         })
         this.activeCastId = visual.id
+        this.castConnected = true
       } catch (e) {
         this.castError = `Cast fallito: ${e.message}`
       }
     },
     async stopCast() {
       this.activeCastId = null
+      this.castConnected = false
+      this.castReconnecting = false
       try {
         await window.api.cast.stop()
       } catch { /* la TV può essere già spenta */ }
+    },
+    // Schermo nero senza staccare la TV: la sessione resta pronta per il
+    // prossimo visual (usato da "Ferma tutto")
+    async blankCast() {
+      this.activeCastId = null
+      try {
+        await window.api.cast.blank()
+      } catch { /* la TV può essere già spenta */ }
+    },
+    // Poll periodico: aggiorna lo stato di riconnessione e spegne l'evidenza
+    // del bottone se la sessione è definitivamente persa
+    async syncCastStatus() {
+      try {
+        const st = await window.api.cast.status()
+        this.castReconnecting = !!st.reconnecting
+        this.castConnected = !!st.casting
+        if (!st.casting && !st.reconnecting && this.activeCastId) this.activeCastId = null
+      } catch { /* backend non raggiungibile: lascia lo stato com'è */ }
     },
     async trigger(track) {
       const settings = useSettingsStore()
@@ -94,7 +117,8 @@ export const usePlaybackStore = defineStore('playback', {
       engine.stopAll()
       this.activeMusicId = null
       this.activeAmbienceIds = []
-      if (this.activeCastId) this.stopCast()
+      // Nero invece di disconnettere: la TV resta agganciata per la scena dopo
+      if (this.activeCastId) this.blankCast()
     }
   }
 })

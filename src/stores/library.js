@@ -20,7 +20,14 @@ export const useLibraryStore = defineStore('library', {
     // I job completati con successo vengono rimossi (feedback = traccia in lista)
     jobs: [],
     // Errore globale (es. espansione playlist fallita)
-    error: null
+    error: null,
+    // Import di file locali in corso (le copie di file grossi durano parecchio)
+    importing: false,
+    // Espansione playlist in corso (--flat-playlist può durare qualche secondo)
+    expanding: false,
+    // Playlist in attesa di conferma: { entries, kind, single }
+    // single = il video puntato dall'URL (v=...), se presente nella playlist
+    pendingBulk: null
   }),
   getters: {
     byId: (s) => (id) => s.tracks.find((t) => t.id === id),
@@ -104,17 +111,35 @@ export const useLibraryStore = defineStore('library', {
 
     // Accetta uno o più URL / playlist (testo multilinea) e accoda i download.
     // asVisual: scarica il VIDEO mp4 (per il cast) invece dell'audio mp3.
+    // Le playlist NON partono subito: restano in pendingBulk finché l'utente
+    // non conferma (confirmBulk) o annulla (cancelBulk).
     async addFromYoutubeBulk(text, { asVisual = false } = {}) {
       this.error = null
       let entries
+      this.expanding = true
       try {
         entries = await window.api.ytdlp.expand(text)
       } catch (e) {
         this.error = e.message
         return
+      } finally {
+        this.expanding = false
       }
       const kind = asVisual ? 'download-visual' : 'download'
-      const idPrefix = asVisual ? 'ytv_' : 'yt_'
+      if (/[?&]list=/.test(text) && entries.length > 1) {
+        // L'URL puntava anche a un video preciso (v=...)? Offri "solo questo"
+        const m = String(text).match(/(?:v=|youtu\.be\/|shorts\/)([\w-]{11})/)
+        const single = m
+          ? entries.find((en) => en.ytId === m[1]) ||
+            { url: `https://youtu.be/${m[1]}`, ytId: m[1], title: `https://youtu.be/${m[1]}` }
+          : null
+        this.pendingBulk = { entries, kind, single }
+        return
+      }
+      this._queueEntries(entries, kind)
+    },
+    _queueEntries(entries, kind) {
+      const idPrefix = kind === 'download-visual' ? 'ytv_' : 'yt_'
       for (const en of entries) {
         // Salta se già in libreria e presente, o già in coda/in corso
         const existing = en.ytId && this.byId(`${idPrefix}${en.ytId}`)
@@ -135,20 +160,59 @@ export const useLibraryStore = defineStore('library', {
       }
       this._pump()
     },
+    // Conferma la playlist in sospeso. onlySingle: solo il video dell'URL.
+    confirmBulk(onlySingle = false) {
+      if (!this.pendingBulk) return
+      const { entries, kind, single } = this.pendingBulk
+      this.pendingBulk = null
+      this._queueEntries(onlySingle && single ? [single] : entries, kind)
+    },
+    cancelBulk() {
+      this.pendingBulk = null
+    },
+    // Interrompe un job: rimosso dalla coda e, se attivo, il processo yt-dlp
+    // viene ucciso nel backend
+    cancelJob(id) {
+      const job = this.jobs.find((j) => j.id === id)
+      if (!job) return
+      this.jobs = this.jobs.filter((j) => j.id !== id)
+      if (job.status === 'active') {
+        Promise.resolve(window.api.ytdlp.cancel(id)).catch(() => {})
+      }
+      this._pump()
+    },
+    // Ferma l'intera coda di download (es. playlist accodata per sbaglio)
+    cancelAllJobs() {
+      const active = this.jobs.filter((j) => j.status === 'active')
+      this.jobs = this.jobs.filter((j) => j.status === 'error')
+      for (const j of active) {
+        Promise.resolve(window.api.ytdlp.cancel(j.id)).catch(() => {})
+      }
+    },
     // Comodità: singolo URL (delega al flusso bulk)
     addFromYoutube(url) {
       return this.addFromYoutubeBulk(url)
     },
 
     async importLocal() {
-      const newTracks = await window.api.library.importLocal()
-      this.tracks.push(...newTracks)
-      if (newTracks.length) await this.persist()
+      this.importing = true
+      try {
+        const newTracks = await window.api.library.importLocal()
+        this.tracks.push(...newTracks)
+        if (newTracks.length) await this.persist()
+      } finally {
+        this.importing = false
+      }
     },
     async importLocalVisual() {
-      const newTracks = await window.api.library.importLocalVisual()
-      this.tracks.push(...newTracks)
-      if (newTracks.length) await this.persist()
+      this.importing = true
+      try {
+        const newTracks = await window.api.library.importLocalVisual()
+        this.tracks.push(...newTracks)
+        if (newTracks.length) await this.persist()
+      } finally {
+        this.importing = false
+      }
     },
     async updateTrack(id, patch) {
       const t = this.byId(id)

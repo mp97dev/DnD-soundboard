@@ -47,6 +47,25 @@ const isLoading = computed(
   () => track.value && playback.loadingIds.includes(track.value.id)
 )
 
+// Distingue a colpo d'occhio video, immagini e scene (audio + visual):
+// prima c'era solo un 📺 generico per qualsiasi visual
+const IMG_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
+const visualKind = computed(() => {
+  const v = visual.value
+  if (!v) return null
+  return IMG_RE.test(v.mediaPath || '') ? 'image' : 'video'
+})
+const castBadge = computed(() => {
+  const icon = visualKind.value === 'image' ? '🖼️' : '🎬'
+  return track.value ? `♪${icon}` : icon
+})
+const castTitle = computed(() => {
+  const media = visualKind.value === 'image' ? 'immagine' : 'video'
+  return track.value
+    ? `Scena: audio + ${media} sul Chromecast`
+    : `${media[0].toUpperCase()}${media.slice(1)} sul Chromecast`
+})
+
 function onClick() {
   if (props.interactive && (track.value || visual.value)) {
     playback.triggerButton(props.button, library)
@@ -67,7 +86,7 @@ function onClick() {
     <img v-if="thumb" :src="thumb" class="thumb" alt="" />
     <span v-if="isLoading" class="loading-spinner" aria-hidden="true" />
     <span class="type-dot" :class="track?.type ?? (visual ? 'visual' : null)" />
-    <span v-if="visual" class="cast-badge" :class="{ casting: isCasting }" title="Bottone con visual (Chromecast)">📺</span>
+    <span v-if="visual" class="cast-badge" :class="{ casting: isCasting }" :title="castTitle">{{ castBadge }}</span>
     <span class="label">{{ button.label }}</span>
     <span v-if="track?.missing || visual?.missing" class="warn">file mancante</span>
     <span v-else-if="!track && !visual" class="warn">nessuna traccia</span>

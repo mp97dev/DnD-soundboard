@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('api', {
     devices: () => invoke('cast:devices'),
     status: () => invoke('cast:status'),
     show: ({ host, path, title }) => invoke('cast:show', { host, path, title }),
+    blank: () => invoke('cast:blank'),
     stop: () => invoke('cast:stop')
   },
   settings: {
@@ -38,6 +39,7 @@ contextBridge.exposeInMainWorld('api', {
     download: (url, jobId) => invoke('ytdlp:download', { url, jobId }),
     downloadVisual: (url, jobId) => invoke('ytdlp:downloadVisual', { url, jobId }),
     redownload: (track, jobId) => invoke('ytdlp:redownload', { track, jobId }),
+    cancel: (jobId) => invoke('ytdlp:cancel', jobId),
     onProgress: (cb) => {
       const listener = (_e, p) => cb(p)
       ipcRenderer.on('ytdlp:progress', listener)

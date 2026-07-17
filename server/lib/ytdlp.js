@@ -5,6 +5,7 @@ const { spawn } = require('child_process')
 const path = require('path')
 const fs = require('fs')
 const { DIRS, BIN_DIR } = require('./paths')
+const { maybeUpdate, friendlyError } = require('./ytdlp-update')
 
 // Cerca prima in ./bin (npm run fetch:ytdlp), poi nel PATH di sistema (apt)
 function binPath(name) {
@@ -25,9 +26,38 @@ function baseArgs() {
   return args
 }
 
-function run(args, onLine) {
+// ---- Cancellazione ----
+// jobId -> { cancelled, proc }: permette di interrompere un download in corso
+// (playlist intere accodate per sbaglio) uccidendo il processo yt-dlp attivo.
+const jobs = new Map()
+const CANCELLED = 'Download annullato'
+
+function trackJob(jobId) {
+  if (!jobId) return null
+  const job = { cancelled: false, proc: null }
+  jobs.set(jobId, job)
+  return job
+}
+
+function cancel(jobId) {
+  const job = jobs.get(jobId)
+  if (!job) return false
+  job.cancelled = true
+  try { job.proc?.kill() } catch { /* già terminato */ }
+  return true
+}
+
+function checkCancelled(job) {
+  if (job?.cancelled) throw new Error(CANCELLED)
+}
+
+function rawRun(args, onLine, job) {
   return new Promise((resolve, reject) => {
+    if (job?.cancelled) return reject(new Error(CANCELLED))
     const proc = spawn(ytdlpPath(), args)
+    // Priorità bassa: yt-dlp+ffmpeg a piena CPU rallentano tutto il resto
+    try { require('os').setPriority(proc.pid, 10) } catch { /* non critico */ }
+    if (job) job.proc = proc
     let out = ''
     let err = ''
     proc.stdout.on('data', (d) => {
@@ -37,10 +67,35 @@ function run(args, onLine) {
     })
     proc.stderr.on('data', (d) => (err += d))
     proc.on('error', reject)
-    proc.on('close', (code) =>
+    proc.on('close', (code) => {
+      if (job) job.proc = null
+      if (job?.cancelled) return reject(new Error(CANCELLED))
       code === 0 ? resolve(out) : reject(new Error(err || `yt-dlp exit ${code}`))
-    )
+    })
   })
+}
+
+// Se un comando fallisce spesso è perché YouTube ha cambiato qualcosa e il
+// binario in ./bin è stantio: prova `yt-dlp -U` e ritenta una volta.
+// (./bin è scrivibile perché è dove fetch:ytdlp scarica il binario.)
+async function run(args, onLine, job) {
+  try {
+    return await rawRun(args, onLine, job)
+  } catch (err) {
+    if (job?.cancelled) throw err
+    // Con YTDLP_PATH (test) il binario è fissato dall'esterno: niente update
+    if (process.env.YTDLP_PATH) throw friendlyError(err)
+    let updated = null
+    try {
+      updated = await maybeUpdate({ current: ytdlpPath(), writableDir: BIN_DIR })
+    } catch { /* update fallito: riporta l'errore originale */ }
+    if (!updated) throw friendlyError(err)
+    try {
+      return await rawRun(args, onLine, job)
+    } catch (err2) {
+      throw friendlyError(err2)
+    }
+  }
 }
 
 function extractYoutubeId(url) {
@@ -81,15 +136,23 @@ async function expandUrls(text) {
   return out
 }
 
-async function downloadTrack(url, onProgress = () => {}) {
+async function downloadTrack(url, onProgress = () => {}, jobId = null) {
   const ytId = extractYoutubeId(url)
   if (!ytId) throw new Error('URL YouTube non valido')
 
   const base = baseArgs()
+  const job = trackJob(jobId)
+  try {
+    return await doDownloadTrack({ url, ytId, base, onProgress, job })
+  } finally {
+    if (jobId) jobs.delete(jobId)
+  }
+}
 
+async function doDownloadTrack({ url, ytId, base, onProgress, job }) {
   // 1. Metadata
   onProgress({ phase: 'metadata', percent: null })
-  const meta = JSON.parse(await run([...base, '-J', '--no-playlist', url]))
+  const meta = JSON.parse(await run([...base, '-J', '--no-playlist', url], null, job))
 
   // 2. Audio (mp3). SOUNDBOARD_AUDIO_QUALITY: leva opzionale per ridurre la
   //    dimensione (es. 7 ≈ 96kbps) e quindi l'egress sui loop di ambience.
@@ -98,6 +161,7 @@ async function downloadTrack(url, onProgress = () => {}) {
   const qualityArgs = process.env.SOUNDBOARD_AUDIO_QUALITY
     ? ['--audio-quality', process.env.SOUNDBOARD_AUDIO_QUALITY]
     : []
+  checkCancelled(job)
   onProgress({ phase: 'audio', percent: 0 })
   await run(
     [
@@ -110,10 +174,12 @@ async function downloadTrack(url, onProgress = () => {}) {
       const m = line.match(/^\[download\]\s+([\d.]+)%/)
       if (m) onProgress({ phase: 'audio', percent: Number(m[1]) })
       else if (line.startsWith('[ExtractAudio]')) onProgress({ phase: 'convert', percent: null })
-    }
+    },
+    job
   )
 
   // 3. Thumbnail (facoltativa)
+  checkCancelled(job)
   onProgress({ phase: 'thumbnail', percent: null })
   let thumbnailPath = null
   try {
@@ -122,11 +188,14 @@ async function downloadTrack(url, onProgress = () => {}) {
       '--skip-download', '--write-thumbnail', '--convert-thumbnails', 'jpg',
       '-o', path.join(DIRS.thumbnails, ytId),
       url
-    ])
+    ], null, job)
     if (fs.existsSync(path.join(DIRS.thumbnails, `${ytId}.jpg`))) {
       thumbnailPath = `library/thumbnails/${ytId}.jpg`
     }
-  } catch { /* thumbnail facoltativa */ }
+  } catch (e) {
+    checkCancelled(job)
+    /* thumbnail facoltativa */
+  }
 
   if (!fs.existsSync(audioOut)) throw new Error('Download audio fallito')
 
@@ -144,17 +213,26 @@ async function downloadTrack(url, onProgress = () => {}) {
 
 // Scarica il VIDEO (per il casting su Chromecast): mp4 con H.264 + AAC,
 // il profilo compatibile con tutti i modelli di Chromecast, max 1080p.
-async function downloadVisual(url, onProgress = () => {}) {
+async function downloadVisual(url, onProgress = () => {}, jobId = null) {
   const ytId = extractYoutubeId(url)
   if (!ytId) throw new Error('URL YouTube non valido')
 
   const base = baseArgs()
+  const job = trackJob(jobId)
+  try {
+    return await doDownloadVisual({ url, ytId, base, onProgress, job })
+  } finally {
+    if (jobId) jobs.delete(jobId)
+  }
+}
 
+async function doDownloadVisual({ url, ytId, base, onProgress, job }) {
   onProgress({ phase: 'metadata', percent: null })
-  const meta = JSON.parse(await run([...base, '-J', '--no-playlist', url]))
+  const meta = JSON.parse(await run([...base, '-J', '--no-playlist', url], null, job))
 
   const videoName = `${ytId}.mp4`
   const videoOut = path.join(DIRS.downloaded, videoName)
+  checkCancelled(job)
   onProgress({ phase: 'video', percent: 0 })
   await run(
     [
@@ -169,9 +247,11 @@ async function downloadVisual(url, onProgress = () => {}) {
       const m = line.match(/^\[download\]\s+([\d.]+)%/)
       if (m) onProgress({ phase: 'video', percent: Number(m[1]) })
       else if (line.startsWith('[Merger]')) onProgress({ phase: 'convert', percent: null })
-    }
+    },
+    job
   )
 
+  checkCancelled(job)
   onProgress({ phase: 'thumbnail', percent: null })
   let thumbnailPath = null
   try {
@@ -180,11 +260,14 @@ async function downloadVisual(url, onProgress = () => {}) {
       '--skip-download', '--write-thumbnail', '--convert-thumbnails', 'jpg',
       '-o', path.join(DIRS.thumbnails, ytId),
       url
-    ])
+    ], null, job)
     if (fs.existsSync(path.join(DIRS.thumbnails, `${ytId}.jpg`))) {
       thumbnailPath = `library/thumbnails/${ytId}.jpg`
     }
-  } catch { /* thumbnail facoltativa */ }
+  } catch (e) {
+    checkCancelled(job)
+    /* thumbnail facoltativa */
+  }
 
   if (!fs.existsSync(videoOut)) throw new Error('Download video fallito')
 
@@ -200,4 +283,4 @@ async function downloadVisual(url, onProgress = () => {}) {
   }
 }
 
-module.exports = { expandUrls, downloadTrack, downloadVisual, extractYoutubeId }
+module.exports = { expandUrls, downloadTrack, downloadVisual, extractYoutubeId, cancel }
