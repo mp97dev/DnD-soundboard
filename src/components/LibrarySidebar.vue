@@ -160,6 +160,11 @@ function onDragStart(e, track) {
     >
       ⟳ Scarica {{ library.missingDownloadable.length }} file mancanti
     </button>
+    <p v-if="library.missingLocal.length" class="local-missing">
+      ⚠ {{ library.missingLocal.length }}
+      {{ library.missingLocal.length === 1 ? 'file locale mancante' : 'file locali mancanti' }}:
+      nessun URL sorgente, reimportali manualmente
+    </p>
     <p v-if="library.error" class="error">{{ library.error }}</p>
 
     <div class="sections">
@@ -184,7 +189,13 @@ function onDragStart(e, track) {
             <span class="title" :title="t.missing ? `${t.title} (file mancante)` : t.title">
               {{ t.title }}
             </span>
-            <span v-if="t.missing" class="missing-badge" title="File audio mancante">⚠</span>
+            <span
+              v-if="t.missing"
+              class="missing-badge"
+              :title="t.source?.type === 'youtube'
+                ? 'File mancante: verrà ri-scaricato da YouTube'
+                : 'File locale mancante: reimportalo manualmente'"
+            >⚠</span>
           </div>
           <p v-if="!library.byType(s.type).length" class="dim">Vuoto</p>
         </template>
@@ -272,6 +283,7 @@ h4 { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; color: var(-
 .import-local { font-size: 14px; }
 .update-library { color: var(--ambience); }
 .missing-badge { flex-shrink: 0; font-size: 12px; color: var(--danger); }
+.local-missing { color: var(--danger); font-size: 12px; margin: 0; }
 .error { color: var(--danger); font-size: 12px; margin: 0; }
 .sections { flex: 1; overflow-y: auto; }
 .track {

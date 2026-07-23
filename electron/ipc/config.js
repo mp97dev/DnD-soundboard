@@ -40,8 +40,11 @@ module.exports = function registerConfigIpc() {
   ipcMain.handle('config:export', async () => {
     const { canceled, filePath } = await dialog.showSaveDialog({
       title: 'Esporta configurazione',
-      defaultPath: `soundboard-export-${new Date().toISOString().slice(0, 10)}.json`,
-      filters: [{ name: 'JSON', extensions: ['json'] }]
+      defaultPath: `soundboard-export-${new Date().toISOString().slice(0, 10)}.dnds`,
+      filters: [
+        { name: 'DnD Soundboard', extensions: ['dnds'] },
+        { name: 'JSON', extensions: ['json'] }
+      ]
     })
     if (canceled || !filePath) return false
 
@@ -61,7 +64,7 @@ module.exports = function registerConfigIpc() {
   ipcMain.handle('config:import', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       title: 'Importa configurazione',
-      filters: [{ name: 'JSON', extensions: ['json'] }],
+      filters: [{ name: 'DnD Soundboard', extensions: ['dnds', 'json'] }],
       properties: ['openFile']
     })
     if (canceled || !filePaths.length) return null

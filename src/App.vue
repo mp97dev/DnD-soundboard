@@ -76,11 +76,14 @@ async function importConfig() {
     const res = await window.api.config.import()
     if (!res) return
     await Promise.all([settings.load(), library.load(), boards.load()])
-    // Scarica in background i file mancanti della board corrente
-    const trackIds =
-      boards.current?.buttons.flatMap((b) => [b.trackId, b.visualId]).filter(Boolean) ?? []
-    library.redownloadMissing(trackIds)
-    flashIoMsg(`Importate ${res.boards} board, ${res.addedTracks} nuove tracce`)
+    // Scarica in background TUTTI i file mancanti con un URL sorgente,
+    // non solo quelli della board corrente
+    library.redownloadMissing()
+    let msg = `Importate ${res.boards} board, ${res.addedTracks} nuove tracce`
+    if (library.missingLocal.length) {
+      msg += ` — ⚠ ${library.missingLocal.length} file locali da reimportare manualmente`
+    }
+    flashIoMsg(msg)
   } catch (e) {
     flashIoMsg(e.message)
   }
@@ -136,8 +139,8 @@ async function importConfig() {
           @click="playback.stopCast()"
         >✕</button>
       </div>
-      <button title="Esporta board e impostazioni (senza gli mp3)" @click="exportConfig">⤓ Esporta</button>
-      <button title="Importa board e impostazioni da file" @click="importConfig">⤒ Importa</button>
+      <button title="Esporta board e impostazioni in un file .dnds (senza gli mp3)" @click="exportConfig">⤓ Esporta</button>
+      <button title="Importa board e impostazioni da un file .dnds" @click="importConfig">⤒ Importa</button>
 
       <div class="master">
         <span class="dim">Master</span>

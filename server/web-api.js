@@ -98,7 +98,7 @@
         return true
       },
       import: async () => {
-        const [f] = await pickFiles('application/json,.json', false)
+        const [f] = await pickFiles('.dnds,application/json,.json', false)
         if (!f) return null
         let bundle
         try {

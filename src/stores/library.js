@@ -33,6 +33,9 @@ export const useLibraryStore = defineStore('library', {
     byId: (s) => (id) => s.tracks.find((t) => t.id === id),
     // Tracce con file mancante ma ri-scaricabili da YouTube
     missingDownloadable: (s) => s.tracks.filter((t) => t.missing && t.source?.type === 'youtube'),
+    // Tracce con file mancante e NESSUN URL sorgente (import locali su un
+    // altro PC): impossibili da recuperare in automatico, vanno reimportate
+    missingLocal: (s) => s.tracks.filter((t) => t.missing && t.source?.type !== 'youtube'),
     // Almeno un download in coda o in corso
     downloading: (s) => s.jobs.some((j) => j.status === 'queued' || j.status === 'active'),
     filtered: (s) => {

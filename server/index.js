@@ -65,7 +65,7 @@ app.get('/api/settings', (_req, res) => res.json(store.getSettings()))
 app.post('/api/settings', (req, res) => res.json(store.saveSettings(req.body)))
 
 app.get('/api/config/export', (_req, res) => {
-  const name = `soundboard-export-${new Date().toISOString().slice(0, 10)}.json`
+  const name = `soundboard-export-${new Date().toISOString().slice(0, 10)}.dnds`
   res.setHeader('Content-Disposition', `attachment; filename="${name}"`)
   res.json(store.exportBundle())
 })
