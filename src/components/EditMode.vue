@@ -2,12 +2,14 @@
 import { ref } from 'vue'
 import { useBoardsStore } from '../stores/boards'
 import { useLibraryStore } from '../stores/library'
+import { usePlaybackStore } from '../stores/playback'
 import LibrarySidebar from './LibrarySidebar.vue'
 import PropertiesPanel from './PropertiesPanel.vue'
 import SoundButton from './SoundButton.vue'
 
 const boards = useBoardsStore()
 const library = useLibraryStore()
+const playback = usePlaybackStore()
 
 const gridEl = ref(null)
 const draggingButtonId = ref(null)
@@ -65,6 +67,7 @@ function onButtonDragStart(e, btn) {
           draggable="true"
           @dragstart="onButtonDragStart($event, btn)"
           @click="boards.selectedButtonId = btn.id"
+          @dblclick.stop="playback.triggerButton(btn, library)"
         >
           <SoundButton
             :button="{ ...btn, row: 1, col: 1, rowSpan: 1, colSpan: 1 }"
@@ -82,7 +85,7 @@ function onButtonDragStart(e, btn) {
 <style scoped>
 .edit-layout {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: auto 1fr;
   height: 100%;
 }
 .grid-area { display: flex; flex-direction: column; min-width: 0; }

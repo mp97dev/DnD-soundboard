@@ -24,7 +24,8 @@ contextBridge.exposeInMainWorld('api', {
     status: () => invoke('cast:status'),
     show: ({ host, path, title }) => invoke('cast:show', { host, path, title }),
     blank: () => invoke('cast:blank'),
-    stop: () => invoke('cast:stop')
+    stop: () => invoke('cast:stop'),
+    viewerUrl: () => invoke('cast:viewerUrl')
   },
   settings: {
     get: () => invoke('settings:get'),

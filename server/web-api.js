@@ -80,7 +80,8 @@
       status: () => get('/api/cast/status'),
       show: ({ host, path, title }) => post('/api/cast/show', { host, path, title }),
       blank: () => post('/api/cast/blank', {}),
-      stop: () => post('/api/cast/stop', {})
+      stop: () => post('/api/cast/stop', {}),
+      viewerUrl: () => get('/api/cast/viewer-url').then((r) => r.url)
     },
     settings: {
       get: () => get('/api/settings'),

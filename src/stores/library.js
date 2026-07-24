@@ -10,10 +10,19 @@ const MAX_CONCURRENT = 3
 const uid = () => Math.random().toString(36).slice(2, 10)
 const clone = (v) => JSON.parse(JSON.stringify(v))
 
+// Tag suggeriti per il primo utilizzo; l'autocomplete unisce questi ai tag già usati
+export const TAG_SUGGESTIONS = [
+  'combattimento', 'esplorazione', 'tensione', 'riposo', 'viaggio', 'mistero',
+  'città', 'villaggio', 'taverna', 'castello', 'dungeon', 'rovine',
+  'foresta', 'grotta', 'oceano', 'montagna', 'palude', 'notte', 'tempesta'
+]
+
 export const useLibraryStore = defineStore('library', {
   state: () => ({
     tracks: [],
     search: '',
+    // Tag selezionati per filtrare la libreria (AND fra tutti quelli attivi)
+    tagFilter: [],
     // Coda di download. Ogni job:
     // { id, kind:'download'|'redownload', url, ytId, trackId, title,
     //   status:'queued'|'active'|'error', phase, percent, error }
@@ -40,8 +49,20 @@ export const useLibraryStore = defineStore('library', {
     downloading: (s) => s.jobs.some((j) => j.status === 'queued' || j.status === 'active'),
     filtered: (s) => {
       const q = s.search.trim().toLowerCase()
-      return q ? s.tracks.filter((t) => t.title.toLowerCase().includes(q)) : s.tracks
+      let list = q
+        ? s.tracks.filter(
+            (t) =>
+              t.title.toLowerCase().includes(q) ||
+              (t.tags || []).some((tag) => tag.toLowerCase().includes(q))
+          )
+        : s.tracks
+      if (s.tagFilter.length) {
+        list = list.filter((t) => s.tagFilter.every((tag) => (t.tags || []).includes(tag)))
+      }
+      return list
     },
+    // Tutti i tag usati in libreria, ordinati alfabeticamente
+    allTags: (s) => [...new Set(s.tracks.flatMap((t) => t.tags || []))].sort((a, b) => a.localeCompare(b)),
     byType() {
       return (type) => this.filtered.filter((t) => t.type === type)
     }
@@ -216,6 +237,12 @@ export const useLibraryStore = defineStore('library', {
       } finally {
         this.importing = false
       }
+    },
+    // Aggiunge/rimuove un tag dal filtro attivo
+    toggleTagFilter(tag) {
+      const i = this.tagFilter.indexOf(tag)
+      if (i === -1) this.tagFilter.push(tag)
+      else this.tagFilter.splice(i, 1)
     },
     async updateTrack(id, patch) {
       const t = this.byId(id)

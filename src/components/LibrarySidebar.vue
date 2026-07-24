@@ -1,10 +1,106 @@
 <script setup>
-import { computed, reactive, ref } from 'vue'
-import { useLibraryStore } from '../stores/library'
+import { computed, onBeforeUnmount, reactive, ref } from 'vue'
+import { TAG_SUGGESTIONS, useLibraryStore } from '../stores/library'
 import { mediaUrl } from '../media'
 
 const library = useLibraryStore()
 const ytUrl = ref('')
+
+// Tutti i tag noti (usati + suggeriti), per il datalist dell'editor inline
+const knownTags = computed(() => [...new Set([...library.allTags, ...TAG_SUGGESTIONS])])
+
+// ---- Anteprima audio: un solo elemento condiviso, un solo player attivo ----
+const previewId = ref(null)
+let previewEl = null
+function stopPreview() {
+  if (previewEl) {
+    previewEl.pause()
+    previewEl.removeAttribute('src')
+    previewEl.load()
+    previewEl = null
+  }
+  previewId.value = null
+}
+function togglePreview(t) {
+  if (previewId.value === t.id) return stopPreview()
+  stopPreview()
+  const el = new Audio(mediaUrl(t.audioPath))
+  el.volume = t.volume ?? 1
+  const stopIfCurrent = () => { if (previewEl === el) stopPreview() }
+  el.onended = stopIfCurrent
+  el.play().catch(stopIfCurrent)
+  previewEl = el
+  previewId.value = t.id
+}
+onBeforeUnmount(stopPreview)
+
+// ---- Editor inline: rinomina + tag ----
+const editingId = ref(null)
+const editTitle = ref('')
+const editTags = ref([])
+const tagInput = ref('')
+function startEdit(t) {
+  editingId.value = t.id
+  editTitle.value = t.title
+  editTags.value = t.tags ? [...t.tags] : []
+  tagInput.value = ''
+}
+function cancelEdit() {
+  editingId.value = null
+  tagInput.value = ''
+}
+function addEditTag(raw) {
+  const tag = raw.trim().toLowerCase()
+  if (tag && !editTags.value.includes(tag)) editTags.value.push(tag)
+}
+function onTagInputKeydown(e) {
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault()
+    addEditTag(tagInput.value)
+    tagInput.value = ''
+  }
+}
+function removeEditTag(tag) {
+  editTags.value = editTags.value.filter((tg) => tg !== tag)
+}
+function saveEdit(t) {
+  if (tagInput.value.trim()) {
+    addEditTag(tagInput.value)
+    tagInput.value = ''
+  }
+  library.updateTrack(t.id, { title: editTitle.value.trim() || t.title, tags: editTags.value })
+  cancelEdit()
+}
+
+// ---- Zoom miniature: ciclo 28 -> 44 -> 64 -> 28 px, persistito ----
+const THUMB_SIZES = [28, 44, 64]
+const thumbSize = ref(Number(localStorage.libraryThumbSize) || 28)
+function cycleThumbSize() {
+  const i = THUMB_SIZES.indexOf(thumbSize.value)
+  thumbSize.value = THUMB_SIZES[(i + 1) % THUMB_SIZES.length]
+  localStorage.libraryThumbSize = thumbSize.value
+}
+
+// ---- Ridimensionamento sidebar: trascinamento del bordo destro ----
+const sidebarWidth = ref(Number(localStorage.librarySidebarWidth) || 260)
+function clampWidth(w) {
+  return Math.min(520, Math.max(200, w))
+}
+function onResizeStart(e) {
+  e.preventDefault()
+  const startX = e.clientX
+  const startWidth = sidebarWidth.value
+  function onMove(ev) {
+    sidebarWidth.value = clampWidth(startWidth + (ev.clientX - startX))
+  }
+  function onUp() {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    localStorage.librarySidebarWidth = sidebarWidth.value
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
+}
 
 // Download annullabili (in coda o in corso)
 const pendingJobCount = computed(
@@ -67,10 +163,28 @@ function onDragStart(e, track) {
 </script>
 
 <template>
-  <aside class="sidebar">
-    <h3>Libreria</h3>
+  <aside class="sidebar" :style="{ width: sidebarWidth + 'px' }">
+    <div class="head-row">
+      <h3>Libreria</h3>
+      <button
+        class="icon-btn thumb-zoom"
+        title="Dimensione miniature"
+        aria-label="Dimensione miniature"
+        @click="cycleThumbSize"
+      >🔍</button>
+    </div>
 
-    <input v-model="library.search" placeholder="Cerca..." class="search" />
+    <input v-model="library.search" placeholder="Cerca per nome o tag..." class="search" />
+
+    <div v-if="library.allTags.length" class="tag-filters">
+      <span
+        v-for="tag in library.allTags"
+        :key="tag"
+        class="tag-chip"
+        :class="{ active: library.tagFilter.includes(tag) }"
+        @click="library.toggleTagFilter(tag)"
+      >{{ tag }}</span>
+    </div>
 
     <div class="import">
       <textarea
@@ -167,7 +281,7 @@ function onDragStart(e, track) {
     </p>
     <p v-if="library.error" class="error">{{ library.error }}</p>
 
-    <div class="sections">
+    <div class="sections" :style="{ '--thumb': thumbSize + 'px' }">
       <section v-for="s in sections" :key="s.type">
         <h4 class="sec-head" @click="toggleSection(s.type)">
           <span class="chev">{{ collapsed[s.type] ? '▸' : '▾' }}</span>
@@ -175,32 +289,67 @@ function onDragStart(e, track) {
           <span class="sec-count">{{ library.byType(s.type).length }}</span>
         </h4>
         <template v-if="!collapsed[s.type]">
-          <div
-            v-for="t in library.byType(s.type)"
-            :key="t.id"
-            class="track"
-            :class="{ missing: t.missing }"
-            draggable="true"
-            @dragstart="onDragStart($event, t)"
-          >
-            <img v-if="trackThumb(t)" :src="trackThumb(t)" class="mini-thumb" alt="" loading="lazy" />
-            <span v-else class="type-dot" :class="t.type" />
-            <span v-if="visualIcon(t)" class="visual-kind">{{ visualIcon(t) }}</span>
-            <span class="title" :title="t.missing ? `${t.title} (file mancante)` : t.title">
-              {{ t.title }}
-            </span>
-            <span
-              v-if="t.missing"
-              class="missing-badge"
-              :title="t.source?.type === 'youtube'
-                ? 'File mancante: verrà ri-scaricato da YouTube'
-                : 'File locale mancante: reimportalo manualmente'"
-            >⚠</span>
-          </div>
+          <template v-for="t in library.byType(s.type)" :key="t.id">
+            <div
+              class="track"
+              :class="{ missing: t.missing }"
+              draggable="true"
+              @dragstart="onDragStart($event, t)"
+            >
+              <img v-if="trackThumb(t)" :src="trackThumb(t)" class="mini-thumb" alt="" loading="lazy" />
+              <span v-else class="type-dot" :class="t.type" />
+              <span v-if="visualIcon(t)" class="visual-kind">{{ visualIcon(t) }}</span>
+              <span class="title" :title="t.missing ? `${t.title} (file mancante)` : t.title">
+                {{ t.title }}
+              </span>
+              <span class="row-actions">
+                <button
+                  v-if="t.type !== 'visual' && !t.missing"
+                  class="row-btn"
+                  :title="previewId === t.id ? 'Ferma anteprima' : 'Anteprima'"
+                  @click.stop="togglePreview(t)"
+                >{{ previewId === t.id ? '⏹' : '▶' }}</button>
+                <button class="row-btn" title="Rinomina / tag" @click.stop="startEdit(t)">✏️</button>
+              </span>
+              <span
+                v-if="t.missing"
+                class="missing-badge"
+                :title="t.source?.type === 'youtube'
+                  ? 'File mancante: verrà ri-scaricato da YouTube'
+                  : 'File locale mancante: reimportalo manualmente'"
+              >⚠</span>
+            </div>
+            <div v-if="editingId === t.id" class="editor bulk-confirm">
+              <input v-model="editTitle" class="edit-title" placeholder="Titolo" />
+              <div class="edit-tags">
+                <span v-for="tag in editTags" :key="tag" class="tag-chip editing">
+                  {{ tag }}
+                  <span class="tag-remove" @click="removeEditTag(tag)">×</span>
+                </span>
+                <input
+                  v-model="tagInput"
+                  class="tag-input"
+                  list="tag-suggestions"
+                  placeholder="+ tag"
+                  @keydown="onTagInputKeydown"
+                />
+              </div>
+              <div class="bulk-btns">
+                <button class="primary" @click="saveEdit(t)">Salva</button>
+                <button @click="cancelEdit">Annulla</button>
+              </div>
+            </div>
+          </template>
           <p v-if="!library.byType(s.type).length" class="dim">Vuoto</p>
         </template>
       </section>
     </div>
+
+    <datalist id="tag-suggestions">
+      <option v-for="tag in knownTags" :key="tag" :value="tag" />
+    </datalist>
+
+    <div class="resize-handle" @pointerdown="onResizeStart"></div>
   </aside>
 </template>
 
@@ -211,17 +360,41 @@ function onDragStart(e, track) {
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
   overflow-y: auto;
+  position: relative; flex-shrink: 0;
 }
 h3 { margin: 0; font-size: 15px; }
 h4 { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.6px; }
+.head-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.thumb-zoom { width: 26px; height: 26px; font-size: 13px; }
 .sec-head { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 4px; }
 .sec-head:hover { color: var(--text); }
 .chev { width: 12px; flex-shrink: 0; }
 .sec-count { margin-left: auto; font-weight: 400; }
 .mini-thumb {
-  width: 28px; height: 28px; flex-shrink: 0;
+  width: var(--thumb, 28px); height: var(--thumb, 28px); flex-shrink: 0;
   object-fit: cover; border-radius: 4px;
 }
+.tag-filters {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  max-height: 72px; overflow-y: auto;
+  font-size: 11px;
+}
+.tag-chip {
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.tag-chip.active { background: var(--music); color: #fff; }
+.tag-chip.editing {
+  display: inline-flex; align-items: center; gap: 3px;
+  cursor: default; background: var(--bg-panel); border: 1px solid var(--border);
+}
+.tag-remove { cursor: pointer; color: var(--text-dim); }
+.tag-remove:hover { color: var(--danger); }
 .visual-kind { flex-shrink: 0; font-size: 12px; }
 .search { width: 100%; }
 .import { display: flex; gap: 6px; align-items: stretch; }
@@ -294,11 +467,33 @@ h4 { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; color: var(-
 }
 .track:hover { background: var(--bg-raised); }
 .track.missing { opacity: 0.5; }
-.title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .type-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .type-dot.music { background: var(--music); }
 .type-dot.ambience { background: var(--ambience); }
 .type-dot.oneshot { background: var(--oneshot); }
 .type-dot.visual { background: var(--visual); }
 .dim { color: var(--text-dim); font-size: 12px; margin: 2px 0; }
+.row-actions {
+  display: flex; gap: 2px; flex-shrink: 0;
+  visibility: hidden;
+}
+.track:hover .row-actions { visibility: visible; }
+.row-btn {
+  background: none; border: none; cursor: pointer;
+  padding: 0 2px; font-size: 12px; line-height: 1;
+}
+.editor {
+  margin: 2px 8px 6px;
+}
+.edit-title { width: 100%; }
+.edit-tags {
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+  font-size: 11px;
+}
+.tag-input { width: 70px; font-size: 11px; }
+.resize-handle {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: 6px; cursor: col-resize;
+}
 </style>

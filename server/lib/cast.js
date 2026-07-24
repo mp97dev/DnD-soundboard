@@ -75,6 +75,8 @@ function lanIp() {
 let session = null // { client, player, host, title }
 let lastShow = null // ultimi argomenti di show(): servono per la riconnessione
 let reconnect = null // { startedAt, timer } quando la sessione è caduta
+let watchdog = null
+const WATCHDOG_INTERVAL_MS = 30 * 1000
 
 const CONNECT_TIMEOUT_MS = 8000
 const RECONNECT_INTERVAL_MS = 5000
@@ -91,8 +93,9 @@ function queued(fn) {
 
 function closeSession() {
   if (!session) return
-  try { session.client.close() } catch { /* già chiusa */ }
+  const s = session
   session = null
+  try { s.client.close() } catch { /* già chiusa */ }
 }
 
 // Riconnessione automatica: quando la sessione cade (blackout, TV che perde
@@ -126,6 +129,40 @@ function cancelReconnect() {
   reconnect = null
 }
 
+// Sonda periodica: getStatus tiene viva la connessione e rileva il caso in cui
+// la TV ha chiuso il receiver senza che arrivi alcun evento. Se il Default
+// Media Receiver non è più tra le app attive, la sessione è persa: riparte
+// la riconnessione automatica (ri-mostra l'ultimo media).
+function ensureWatchdog() {
+  if (watchdog) return
+  watchdog = setInterval(() => {
+    if (!session) {
+      // Niente sessione e niente riconnessione in corso: il watchdog non serve
+      if (!reconnect) {
+        clearInterval(watchdog)
+        watchdog = null
+      }
+      return
+    }
+    const s = session
+    try {
+      s.client.getStatus((err, st) => {
+        if (session !== s) return // sessione cambiata nel frattempo
+        const alive = !err && (st?.applications || []).some(
+          (a) => a.appId === DefaultMediaReceiver.APP_ID
+        )
+        if (!alive) {
+          closeSession()
+          scheduleReconnect()
+        }
+      })
+    } catch {
+      closeSession()
+      scheduleReconnect()
+    }
+  }, WATCHDOG_INTERVAL_MS)
+}
+
 function connect(host) {
   return new Promise((resolve, reject) => {
     const client = new Client()
@@ -149,6 +186,13 @@ function connect(host) {
         settled = true
         clearTimeout(timer)
         reject(err)
+      }
+    })
+    client.on('close', () => {
+      // Socket chiusa senza 'error' (TV che termina la connessione con garbo)
+      if (session && session.client === client) {
+        closeSession()
+        scheduleReconnect()
       }
     })
     client.connect(host, () => {
@@ -269,6 +313,15 @@ async function doShow({ host, url, contentType, title = '', loop = true }) {
     throw err
   }
   session = { client, player, host, title }
+  // La TV può chiudere il receiver (torna alla home) lasciando la socket viva:
+  // l'evento 'close' dell'application è l'unico segnale
+  player.on('close', () => {
+    if (session && session.player === player) {
+      closeSession()
+      scheduleReconnect()
+    }
+  })
+  ensureWatchdog()
   return { casting: true, title }
 }
 

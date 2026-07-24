@@ -25,21 +25,19 @@ export const usePlaybackStore = defineStore('playback', {
         else await this.castVisual(visual)
       }
     },
+    // Mostra il visual sul Chromecast selezionato (se c'è) e sempre sulla
+    // pagina /viewer (host può essere null: solo-viewer, nessuna TV agganciata).
     async castVisual(visual) {
       const settings = useSettingsStore()
       this.castError = null
-      if (!settings.castDeviceHost) {
-        this.castError = 'Seleziona un Chromecast dal menu 📺 nella toolbar'
-        return
-      }
       try {
-        await window.api.cast.show({
+        const res = await window.api.cast.show({
           host: settings.castDeviceHost,
           path: visual.mediaPath,
           title: visual.title
         })
         this.activeCastId = visual.id
-        this.castConnected = true
+        this.castConnected = !!res.casting
       } catch (e) {
         this.castError = `Cast fallito: ${e.message}`
       }
@@ -67,6 +65,10 @@ export const usePlaybackStore = defineStore('playback', {
         const st = await window.api.cast.status()
         this.castReconnecting = !!st.reconnecting
         this.castConnected = !!st.casting
+        const settings = useSettingsStore()
+        // Solo-viewer (nessuna TV selezionata): non esiste una sessione cast da
+        // monitorare, lo stato del bottone non va spento
+        if (!settings.castDeviceHost) return
         if (!st.casting && !st.reconnecting && this.activeCastId) this.activeCastId = null
       } catch { /* backend non raggiungibile: lascia lo stato com'è */ }
     },

@@ -81,6 +81,7 @@ function setVolume(v) {
   </footer>
   <footer class="props dim-panel" v-else>
     Seleziona un bottone per modificarne le proprietà — trascina una traccia dalla libreria per crearne uno.
+    Doppio click su un bottone per provarlo senza uscire dall'edit.
   </footer>
 </template>
 

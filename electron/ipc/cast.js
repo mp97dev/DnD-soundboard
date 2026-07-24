@@ -7,6 +7,7 @@ const http = require('http')
 const path = require('path')
 const fs = require('fs')
 const cast = require('../../server/lib/cast')
+const viewer = require('../../server/lib/viewer')
 const { serveMedia, contentTypeFor, BLANK_PNG } = require('../../server/lib/media')
 const { ensureLoopPlaylist } = require('../../server/lib/hlsloop')
 const { DATA_DIR } = require('../paths')
@@ -44,6 +45,14 @@ function ensureMediaServer() {
         res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': BLANK_PNG.length })
         return req.method === 'HEAD' ? res.end() : res.end(BLANK_PNG)
       }
+      if (url === '/viewer' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        return res.end(viewer.viewerHtml())
+      }
+      if (url === '/api/cast/current' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+        return res.end(JSON.stringify(viewer.getCurrent()))
+      }
       // niente decode qui: ci pensa serveMedia (decodeURIComponent)
       const m = /^\/media\/(.+)/.exec(url)
       if (!m || (req.method !== 'GET' && req.method !== 'HEAD')) {
@@ -67,10 +76,17 @@ function ensureMediaServer() {
 module.exports = function registerCastIpc() {
   ipcMain.handle('cast:devices', () => cast.listDevices())
   ipcMain.handle('cast:status', () => cast.status())
-  ipcMain.handle('cast:stop', () => cast.stop())
+  ipcMain.handle('cast:stop', () => {
+    viewer.clear()
+    return cast.stop()
+  })
 
   ipcMain.handle('cast:show', async (_e, { host, path: mediaPath, title } = {}) => {
-    const port = await ensureMediaServer()
+    viewer.setCurrent(mediaPath, contentTypeFor(mediaPath), title)
+    const port = await ensureMediaServer() // serve comunque il viewer anche senza TV
+    // Nessuna TV selezionata: modalità solo-viewer, niente Chromecast da contattare
+    if (!host) return { casting: false }
+
     const ip = cast.lanIp()
     if (!ip) throw new Error('Impossibile determinare l\'IP LAN di questo PC')
 
@@ -93,9 +109,17 @@ module.exports = function registerCastIpc() {
 
   // Schermo nero senza staccare la sessione ("Ferma tutto")
   ipcMain.handle('cast:blank', async () => {
+    viewer.clear()
     const port = await ensureMediaServer()
     const ip = cast.lanIp()
     if (!ip) throw new Error('Impossibile determinare l\'IP LAN di questo PC')
     return cast.blank({ url: `http://${ip}:${port}/blank.png` })
+  })
+
+  ipcMain.handle('cast:viewerUrl', async () => {
+    const port = await ensureMediaServer()
+    const ip = cast.lanIp()
+    if (!ip) throw new Error('Impossibile determinare l\'IP LAN di questo PC')
+    return `http://${ip}:${port}/viewer`
   })
 }

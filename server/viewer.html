@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soundboard Viewer</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+  }
+  #stage {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #stage img, #stage video {
+    max-width: 100%; max-height: 100%;
+    width: auto; height: auto;
+    object-fit: contain;
+  }
+  #caption {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    text-align: center;
+    padding: 18px 12px;
+    color: rgba(255,255,255,0.35);
+    font: 14px/1.4 system-ui, sans-serif;
+    transition: opacity 1.5s ease;
+  }
+  #caption.hidden { opacity: 0; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="caption">In attesa di un visual…</div>
+<script>
+(function () {
+  var stage = document.getElementById('stage')
+  var caption = document.getElementById('caption')
+  var lastTs = null
+  var lastRel = null
+  var captionTimer = null
+
+  function showCaption() {
+    clearTimeout(captionTimer)
+    caption.classList.remove('hidden')
+    captionTimer = setTimeout(function () {
+      caption.classList.add('hidden')
+    }, 3000)
+  }
+
+  function showNothing() {
+    stage.innerHTML = ''
+    showCaption()
+  }
+
+  function showMedia(cur) {
+    caption.classList.add('hidden')
+    clearTimeout(captionTimer)
+    var url = '/media/' + cur.rel.split('/').map(encodeURIComponent).join('/')
+    var el
+    if (cur.contentType && cur.contentType.indexOf('video/') === 0) {
+      el = document.createElement('video')
+      el.autoplay = true
+      el.muted = true
+      el.loop = true
+      el.playsInline = true
+      el.src = url
+    } else {
+      el = document.createElement('img')
+      el.src = url
+      el.alt = cur.title || ''
+    }
+    stage.innerHTML = ''
+    stage.appendChild(el)
+  }
+
+  function poll() {
+    fetch('/api/cast/current')
+      .then(function (r) { return r.json() })
+      .then(function (cur) {
+        if (!cur || !cur.rel) {
+          if (lastRel !== null) { lastRel = null; lastTs = null; showNothing() }
+          return
+        }
+        if (cur.ts === lastTs && cur.rel === lastRel) return
+        lastTs = cur.ts
+        lastRel = cur.rel
+        showMedia(cur)
+      })
+      .catch(function () { /* riprova al prossimo giro */ })
+  }
+
+  showCaption()
+  poll()
+  setInterval(poll, 1500)
+})()
+</script>
+</body>
+</html>

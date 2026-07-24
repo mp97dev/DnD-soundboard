@@ -67,6 +67,20 @@ function flashIoMsg(text) {
   ioMsgTimer = setTimeout(() => { ioMsg.value = '' }, 5000)
 }
 
+async function copyViewerLink() {
+  try {
+    const url = await window.api.cast.viewerUrl()
+    try {
+      await navigator.clipboard.writeText(url)
+      flashIoMsg(`Viewer: ${url} — link copiato`)
+    } catch {
+      flashIoMsg(`Viewer: ${url}`)
+    }
+  } catch (e) {
+    flashIoMsg(`Viewer non disponibile: ${e.message}`)
+  }
+}
+
 async function exportConfig() {
   if (await window.api.config.export()) flashIoMsg('Configurazione esportata')
 }
@@ -139,6 +153,10 @@ async function importConfig() {
           @click="playback.stopCast()"
         >✕</button>
       </div>
+      <button
+        title="Link della pagina viewer: aprila su tablet/altri schermi per vedere i visual"
+        @click="copyViewerLink"
+      >📱</button>
       <button title="Esporta board e impostazioni in un file .dnds (senza gli mp3)" @click="exportConfig">⤓ Esporta</button>
       <button title="Importa board e impostazioni da un file .dnds" @click="importConfig">⤒ Importa</button>
 

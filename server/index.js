@@ -12,6 +12,7 @@ const { WebSocketServer } = require('ws')
 const store = require('./lib/store')
 const ytdlp = require('./lib/ytdlp')
 const cast = require('./lib/cast')
+const viewer = require('./lib/viewer')
 const { serveMedia, contentTypeFor, BLANK_PNG } = require('./lib/media')
 const { ensureLoopPlaylist } = require('./lib/hlsloop')
 const { DATA_DIR, RENDERER_DIR, BIN_DIR, ensureDataDirs } = require('./lib/paths')
@@ -125,10 +126,17 @@ app.post('/api/ytdlp/redownload', async (req, res) => {
 // Chromecast di scaricare il media dal proprio endpoint /media/.
 app.get('/api/cast/devices', (_req, res) => res.json(cast.listDevices()))
 app.get('/api/cast/status', (_req, res) => res.json(cast.status()))
-app.post('/api/cast/stop', async (_req, res) => res.json(await cast.stop()))
+app.post('/api/cast/stop', async (_req, res) => {
+  viewer.clear()
+  res.json(await cast.stop())
+})
 app.post('/api/cast/show', async (req, res) => {
   const { host, path: mediaPath, title } = req.body || {}
   try {
+    viewer.setCurrent(mediaPath, contentTypeFor(mediaPath), title)
+    // Nessuna TV selezionata: modalità solo-viewer, niente Chromecast da contattare
+    if (!host) return res.json({ casting: false })
+
     // URL raggiungibile dalla TV: l'host con cui il client ha raggiunto il
     // server (se non è localhost), altrimenti l'IP LAN rilevato.
     const reqHost = String(req.headers.host || '').split(':')[0]
@@ -159,6 +167,7 @@ app.post('/api/cast/show', async (req, res) => {
 })
 
 app.post('/api/cast/blank', async (req, res) => {
+  viewer.clear()
   try {
     const reqHost = String(req.headers.host || '').split(':')[0]
     const usable = reqHost && !['localhost', '127.0.0.1'].includes(reqHost) ? reqHost : cast.lanIp()
@@ -167,6 +176,15 @@ app.post('/api/cast/blank', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
+})
+
+app.get('/api/cast/current', (_req, res) => res.json(viewer.getCurrent()))
+app.get('/viewer', (_req, res) => res.type('html').send(viewer.viewerHtml()))
+app.get('/api/cast/viewer-url', (req, res) => {
+  const reqHost = String(req.headers.host || '').split(':')[0]
+  const usable = reqHost && !['localhost', '127.0.0.1'].includes(reqHost) ? reqHost : cast.lanIp()
+  if (!usable) return res.status(500).json({ error: 'Impossibile determinare l\'IP LAN del server' })
+  res.json({ url: `http://${usable}:${PORT}/viewer` })
 })
 
 // ---------- Media (con supporto Range) ----------
