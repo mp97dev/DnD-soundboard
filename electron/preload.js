@@ -46,5 +46,8 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('ytdlp:progress', listener)
       return () => ipcRenderer.removeListener('ytdlp:progress', listener)
     }
+  },
+  log: {
+    write: (entry) => invoke('log:write', entry)
   }
 })

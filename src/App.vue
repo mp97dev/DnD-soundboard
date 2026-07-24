@@ -11,6 +11,7 @@ const boards = useBoardsStore()
 const library = useLibraryStore()
 const settings = useSettingsStore()
 const playback = usePlaybackStore()
+playback.initAudio()
 
 const newBoardName = ref('')
 const creating = ref(false)
@@ -135,6 +136,7 @@ async function importConfig() {
       <span v-if="ioMsg" class="io-msg">{{ ioMsg }}</span>
       <span v-if="playback.castError" class="io-msg cast-error">{{ playback.castError }}</span>
       <span v-else-if="playback.castReconnecting" class="io-msg cast-error">📡 TV persa: riconnessione automatica…</span>
+      <span v-if="playback.audioError" class="io-msg cast-error">{{ playback.audioError }}</span>
 
       <div class="cast" title="Chromecast su cui mostrare i visual">
         <span class="dim">📺</span>

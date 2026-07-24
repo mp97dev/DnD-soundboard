@@ -120,6 +120,10 @@
         progressCbs.add(cb)
         return () => progressCbs.delete(cb)
       }
+    },
+    log: {
+      // Un log fallito non deve mai far esplodere il chiamante: post() rilancia sugli status non-2xx
+      write: (entry) => post('/api/log', entry).catch(() => {})
     }
   }
 

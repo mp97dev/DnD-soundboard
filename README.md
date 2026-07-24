@@ -37,6 +37,8 @@ Run it three ways from the same codebase:
 - [Development](#-development)
 - [Releases (CI)](#-releases-ci)
 - [Troubleshooting](#-troubleshooting)
+- [Findings & test plan](docs/session-test-plan.md) — why audio stuttered and the
+  TV dropped during a real 4-hour session, what changed, and what to measure next
 
 ---
 
@@ -53,9 +55,17 @@ Run it three ways from the same codebase:
   Chromecast-safe H.264 mp4 (🎬 button).
 - **Local import** — your own mp3/ogg/wav/m4a/flac, plus jpg/png/webp/gif images
   and mp4/webm videos as visuals.
+- **Searchable, taggable library** — filter by name *or* tag, tag tracks by usage
+  (combat, exploration) and biome (city, castle, forest…), rename anything
+  inline, preview audio without leaving edit mode.
 - **Chromecast visuals** — cast any image or video to your TV. The app serves
   the file over HTTP on your LAN and drives the TV with the Cast protocol —
   no browser-tab casting, no mirroring, no flakiness.
+- **Viewer page** — the current visual is also served as a plain web page on your
+  LAN: open it on a tablet or any second screen, with or without a Chromecast.
+- **Diagnostic log** — a single rotating log file records playback, cast session
+  health and the audio/network environment, so a bad session can be explained
+  afterwards instead of guessed at.
 - **Scenes** — one button = a track **and** a visual: tap it and the tavern
   theme starts on your speaker while the tavern picture appears on the TV.
 - **Export / Import** — share boards + settings + library metadata as one JSON
@@ -169,6 +179,21 @@ In **Edit mode** the left sidebar is your library.
   coloured dot marks the channel (blue/green/amber/purple). Drag anything onto
   the grid to create a button.
 
+**Finding things once the library grows**
+
+- **Search** matches both the title and the tags.
+- **Tags** — click ✎ on a track to rename it and edit its tags. Type a tag and
+  press <kbd>Enter</kbd> (or comma) to add it; a starter set is suggested
+  (*combattimento, esplorazione, taverna, castello, foresta…*) and every tag you
+  have already used is autocompleted.
+- **Tag filter** — the chips under the search box filter the library. Several
+  active chips combine with **AND**, so *castello* + *tensione* narrows to
+  exactly the tracks carrying both.
+- **▶ / ■ preview** — audition a track straight from the sidebar, without placing
+  it on the grid. Only one preview plays at a time.
+- **Resize the sidebar** by dragging its right edge, and cycle the thumbnail size
+  with 🔍. Both are remembered between sessions.
+
 > Set the download bitrate with the `SOUNDBOARD_AUDIO_QUALITY` env var
 > (e.g. `7` ≈ 96 kbps) to shrink long ambience loops.
 
@@ -183,6 +208,8 @@ In **Edit mode** the left sidebar is your library.
 
 ![Properties panel](docs/img/properties-panel.png)
 
+- **Double-click** a button to play it right there — handy for checking a scene
+  without leaving edit mode and coming back.
 - A button showing a dashed border is **unassigned** or its file is **missing**.
 
 ### Play mode
@@ -213,6 +240,19 @@ or LAN server) tells the Chromecast to fetch the file from a tiny local HTTP
 media endpoint (`:8123` on desktop, the server port in tablet mode). That's the
 reliable way to cast and costs nothing in quality. The PC/server and the TV
 must be on the same LAN.
+
+**Viewer page (tablet / second screen)** — the 📱 toolbar button copies a LAN URL
+serving the current visual as an ordinary web page. Open it on a tablet, a
+laptop, or a TV's own browser. It works **with or without** a Chromecast: leave
+the 📺 picker empty and the app runs in *viewer-only* mode, pushing visuals to the
+page and never touching the Cast protocol.
+
+**If the TV drops out** — the app reconnects on its own. It retries every 5s for
+up to 10 minutes, and a watchdog probes the session every 30s to catch the case
+where the TV terminates the receiver silently, without closing the socket. The
+toolbar shows the reconnecting state; you should not need to re-pick the device.
+Every disconnect is recorded in the log with its cause and how long the session
+had survived — see [docs/session-test-plan.md](docs/session-test-plan.md).
 
 ### Scenes
 
@@ -416,3 +456,26 @@ option once users may have downloaded it.
 - **Tablet can't reach the server**: it must be on the same network as the host;
   check the LXC IP and that port `8080` is open. See
   [server/README.md](server/README.md) for remote access.
+- **Audio stutters or goes silent over Bluetooth (Linux)**: usually the radio,
+  not the app — Bluetooth and 2.4 GHz Wi-Fi share a band, and on many laptops a
+  single combo card time-slices between them. A 3.5 mm cable or a USB DAC removes
+  the problem outright. Also check `env` in the log for whether you are on
+  PipeWire (good) or PulseAudio (worse for Bluetooth). The app now recovers on
+  its own from a speaker that drops and returns; if it can't, it says so on
+  screen instead of failing silently.
+- **Cast keeps dropping on long sessions**: check the log for Wi-Fi power saving
+  (`iw dev <iface> set power_save off`). Your PC is the media *server* the TV
+  pulls from, so its radio going to sleep starves the TV's stream.
+
+### The log
+
+One rotating file records startup, environment, playback and cast health:
+
+```
+~/.config/DnD Soundboard/data/logs/soundboard.log   # packaged Linux app
+./data/logs/soundboard.log                          # development / server mode
+```
+
+It rotates at 2 MB keeping one backup, and a logging failure can never break
+playback. Useful greps and how to read a bad session are documented in
+[docs/session-test-plan.md](docs/session-test-plan.md).

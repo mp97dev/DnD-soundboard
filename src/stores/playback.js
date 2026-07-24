@@ -11,9 +11,20 @@ export const usePlaybackStore = defineStore('playback', {
     activeCastId: null, // visual attualmente in cast sul Chromecast
     castError: null,
     castReconnecting: false, // il backend sta riagganciando la TV persa
-    castConnected: false // sessione TV viva (anche se a schermo nero)
+    castConnected: false, // sessione TV viva (anche se a schermo nero)
+    audioError: null
   }),
   actions: {
+    // Collega il motore audio al gestore d'errore della UI: senza questo, un
+    // rebuild esausto o un play() fallito nell'engine restano invisibili
+    // (loggati ma muti in interfaccia). Chiamata una volta sola dal setup di
+    // App.vue, non lazy nel trigger: qui non dipende da un'azione utente e
+    // deve essere pronta prima del primo click.
+    initAudio() {
+      engine.setErrorHandler(({ path, message }) => {
+        this.audioError = `Audio non riproducibile: ${path ?? message}`
+      })
+    },
     // Bottone della board: può avere una traccia audio, un visual da castare,
     // o entrambi (= scena). L'audio suona in locale, il visual va in TV.
     async triggerButton(button, library) {
@@ -77,6 +88,7 @@ export const usePlaybackStore = defineStore('playback', {
       if (!track || track.missing) return
       if (this.loadingIds.includes(track.id)) return // anti doppio-click
 
+      this.audioError = null
       this.loadingIds.push(track.id)
       try {
         await this._trigger(track, settings)

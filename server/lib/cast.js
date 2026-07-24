@@ -10,6 +10,11 @@
 //   in mp4 sono i formati sicuri su tutti i Chromecast.
 const { Client, DefaultMediaReceiver } = require('castv2-client')
 const os = require('os')
+const log = require('./log')
+
+// Log dedicato al cast: la sessione di 4 ore in cui la TV è caduta 3 volte
+// senza un errore visibile è nata proprio dalla mancanza di questi dati.
+const clog = log.child('cast')
 
 // ---- Discovery ----
 let bonjour = null
@@ -23,15 +28,24 @@ function startDiscovery() {
   browser = bonjour.find({ type: 'googlecast' }, (service) => {
     const host = (service.addresses || []).find((a) => /^\d+\.\d+\.\d+\.\d+$/.test(a))
     if (!host) return
-    devices.set(`${host}:${service.port}`, {
+    const key = `${host}:${service.port}`
+    const isNew = !devices.has(key) // log solo alla prima comparsa, non ad ogni refresh mDNS
+    const device = {
       name: (service.txt && service.txt.fn) || service.name,
       host,
       port: service.port || 8009
-    })
+    }
+    devices.set(key, device)
+    if (isNew) clog.info('dispositivo scoperto', { name: device.name, host: device.host })
   })
   browser.on('down', (service) => {
     const host = (service.addresses || []).find((a) => /^\d+\.\d+\.\d+\.\d+$/.test(a))
-    if (host) devices.delete(`${host}:${service.port}`)
+    if (host) {
+      const key = `${host}:${service.port}`
+      const device = devices.get(key)
+      clog.info('dispositivo non più visibile', { name: device?.name, host })
+      devices.delete(key)
+    }
   })
 }
 
@@ -43,7 +57,9 @@ function listDevices() {
     browser.update()
   } catch {
     // Socket mDNS morta (rete caduta/cambiata, es. blackout del router):
-    // butta via tutto e riparti con una discovery nuova
+    // butta via tutto e riparti con una discovery nuova. Livello warn perché
+    // segnala che lo stack di rete è stato disturbato, non solo il cast
+    clog.warn('socket mDNS morta, la ricreo')
     try { bonjour.destroy() } catch { /* già morta */ }
     bonjour = null
     browser = null
@@ -73,10 +89,26 @@ function lanIp() {
 
 // ---- Sessione di cast ----
 let session = null // { client, player, host, title }
+let sessionStartedAt = null // per calcolare uptimeSec quando la sessione cade
 let lastShow = null // ultimi argomenti di show(): servono per la riconnessione
-let reconnect = null // { startedAt, timer } quando la sessione è caduta
+let reconnect = null // { startedAt, timer, attempts } quando la sessione è caduta
 let watchdog = null
 const WATCHDOG_INTERVAL_MS = 30 * 1000
+
+// Punto unico per loggare una perdita di sessione: ci sono 4 modi diversi in
+// cui la TV può sparire (error/close del client, close del player, watchdog)
+// e per capire se il Default Media Receiver regge le immagini statiche serve
+// sapere, per ognuno, da quanto tempo la sessione era su e cosa mostrava.
+function logSessionLoss(detector, extra) {
+  const uptimeSec = sessionStartedAt ? Math.round((Date.now() - sessionStartedAt) / 1000) : null
+  clog.warn('sessione cast persa', {
+    detector,
+    uptimeSec,
+    contentType: lastShow?.contentType ?? null,
+    title: lastShow?.title ?? null,
+    ...extra
+  })
+}
 
 const CONNECT_TIMEOUT_MS = 8000
 const RECONNECT_INTERVAL_MS = 5000
@@ -95,6 +127,7 @@ function closeSession() {
   if (!session) return
   const s = session
   session = null
+  sessionStartedAt = null
   try { s.client.close() } catch { /* già chiusa */ }
 }
 
@@ -106,21 +139,32 @@ function scheduleReconnect() {
   const startedAt = Date.now()
   const attempt = () => {
     if (!reconnect) return
-    if (Date.now() - startedAt > RECONNECT_MAX_MS) {
+    const elapsedMs = Date.now() - startedAt
+    if (elapsedMs > RECONNECT_MAX_MS) {
+      clog.warn('reconnect: rinuncio, superato il limite di 10 minuti', {
+        elapsedMs,
+        attempts: reconnect.attempts
+      })
       reconnect = null
       return
     }
+    reconnect.attempts += 1
+    clog.info('reconnect: tentativo', { attempt: reconnect.attempts, elapsedMs })
     queued(async () => {
       if (!reconnect || !lastShow) return
       try {
         await doShow(lastShow)
+        clog.info('reconnect: riuscito', {
+          downtimeMs: Date.now() - startedAt,
+          attempts: reconnect.attempts
+        })
         reconnect = null
       } catch {
         if (reconnect) reconnect.timer = setTimeout(attempt, RECONNECT_INTERVAL_MS)
       }
     })
   }
-  reconnect = { startedAt, timer: setTimeout(attempt, RECONNECT_INTERVAL_MS) }
+  reconnect = { startedAt, timer: setTimeout(attempt, RECONNECT_INTERVAL_MS), attempts: 0 }
 }
 
 function cancelReconnect() {
@@ -135,12 +179,16 @@ function cancelReconnect() {
 // la riconnessione automatica (ri-mostra l'ultimo media).
 function ensureWatchdog() {
   if (watchdog) return
+  // Debug e non info: è avvio/arresto di un meccanismo interno, non un evento
+  // di sessione. Niente riga periodica ogni 30s, sarebbe rumore su 4 ore.
+  clog.debug('watchdog avviato')
   watchdog = setInterval(() => {
     if (!session) {
       // Niente sessione e niente riconnessione in corso: il watchdog non serve
       if (!reconnect) {
         clearInterval(watchdog)
         watchdog = null
+        clog.debug('watchdog fermato')
       }
       return
     }
@@ -148,15 +196,25 @@ function ensureWatchdog() {
     try {
       s.client.getStatus((err, st) => {
         if (session !== s) return // sessione cambiata nel frattempo
-        const alive = !err && (st?.applications || []).some(
+        const appPresent = !err && (st?.applications || []).some(
           (a) => a.appId === DefaultMediaReceiver.APP_ID
         )
+        const alive = !err && appPresent
         if (!alive) {
+          // Distinguere le due cause: un errore di probe è un problema di
+          // rete/socket, un receiver assente è la TV che ha davvero mollato
+          // l'app (l'ipotesi Backdrop/ambient mode che questa strumentazione
+          // vuole confermare)
+          logSessionLoss('watchdog', {
+            probeError: err ? err.message : null,
+            reason: err ? 'errore probe getStatus' : 'receiver assente dalle app attive'
+          })
           closeSession()
           scheduleReconnect()
         }
       })
-    } catch {
+    } catch (err) {
+      logSessionLoss('watchdog', { probeError: err.message, reason: 'eccezione sincrona da getStatus' })
       closeSession()
       scheduleReconnect()
     }
@@ -164,6 +222,8 @@ function ensureWatchdog() {
 }
 
 function connect(host) {
+  const startedAt = Date.now()
+  clog.info('connect: tentativo', { host })
   return new Promise((resolve, reject) => {
     const client = new Client()
     let settled = false
@@ -172,6 +232,7 @@ function connect(host) {
     const timer = setTimeout(() => {
       if (settled) return
       settled = true
+      clog.warn('connect: timeout di 8s scaduto', { host, elapsedMs: Date.now() - startedAt })
       try { client.close() } catch { /* mai aperta */ }
       reject(new Error(`TV non raggiungibile (${host})`))
     }, CONNECT_TIMEOUT_MS)
@@ -179,18 +240,21 @@ function connect(host) {
       // Connessione caduta (TV spenta, rete): la sessione non è più valida.
       // Se stavamo mostrando qualcosa, parte la riconnessione automatica.
       if (session && session.client === client) {
+        logSessionLoss('client-error', { err: err.message })
         closeSession()
         scheduleReconnect()
       }
       if (!settled) {
         settled = true
         clearTimeout(timer)
+        clog.warn('connect: fallita', { host, elapsedMs: Date.now() - startedAt, err: err.message })
         reject(err)
       }
     })
     client.on('close', () => {
       // Socket chiusa senza 'error' (TV che termina la connessione con garbo)
       if (session && session.client === client) {
+        logSessionLoss('client-close')
         closeSession()
         scheduleReconnect()
       }
@@ -199,22 +263,33 @@ function connect(host) {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      clog.info('connect: riuscita', { host, elapsedMs: Date.now() - startedAt })
       resolve(client)
     })
   })
 }
 
 // Se la socket muore tra connect e launch/load, i callback castv2 non
-// arrivano mai: ogni passo ha un tetto massimo per non appendere la UI
-function withTimeout(promise, ms, msg) {
+// arrivano mai: ogni passo ha un tetto massimo per non appendere la UI.
+// `step` serve solo a loggare QUALE dei tre passi (launch/load/queueLoad) è
+// scaduto, non cambia né il timeout né l'esito della promise.
+function withTimeout(promise, ms, msg, step) {
   let t
+  let timedOut = false
   const timeout = new Promise((_, reject) => {
-    t = setTimeout(() => reject(new Error(msg)), ms)
+    t = setTimeout(() => {
+      timedOut = true
+      reject(new Error(msg))
+    }, ms)
   })
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(t))
+  return Promise.race([promise, timeout]).finally(() => {
+    clearTimeout(t)
+    if (timedOut) clog.warn('timeout in fase di avvio cast', { step, ms })
+  })
 }
 
 function launch(client) {
+  const startedAt = Date.now()
   return withTimeout(
     new Promise((resolve, reject) => {
       client.launch(DefaultMediaReceiver, (err, player) =>
@@ -222,11 +297,16 @@ function launch(client) {
       )
     }),
     10000,
-    'La TV non ha avviato il receiver (timeout)'
-  )
+    'La TV non ha avviato il receiver (timeout)',
+    'launch'
+  ).then((player) => {
+    clog.info('receiver avviato', { elapsedMs: Date.now() - startedAt })
+    return player
+  })
 }
 
 function loadMedia(player, media) {
+  const startedAt = Date.now()
   return withTimeout(
     new Promise((resolve, reject) => {
       player.load(media, { autoplay: true }, (err, status) =>
@@ -234,13 +314,18 @@ function loadMedia(player, media) {
       )
     }),
     15000,
-    'La TV non ha caricato il media (timeout)'
-  )
+    'La TV non ha caricato il media (timeout)',
+    'load'
+  ).then((status) => {
+    clog.info('media caricato', { elapsedMs: Date.now() - startedAt })
+    return status
+  })
 }
 
 // Loop nativo del receiver: coda con un solo item e REPEAT_ALL. Nessun gap
 // a fine riproduzione, a differenza del reload manuale su IDLE/FINISHED.
 function loadMediaLooping(player, media) {
+  const startedAt = Date.now()
   return withTimeout(
     new Promise((resolve, reject) => {
       player.queueLoad(
@@ -250,8 +335,12 @@ function loadMediaLooping(player, media) {
       )
     }),
     15000,
-    'La TV non ha caricato il media (timeout)'
-  )
+    'La TV non ha caricato il media (timeout)',
+    'queueLoad'
+  ).then((status) => {
+    clog.info('media in loop caricato', { elapsedMs: Date.now() - startedAt })
+    return status
+  })
 }
 
 // Mostra un media sul Chromecast. contentType decide il comportamento:
@@ -260,6 +349,7 @@ function show(args) {
   return queued(() => {
     cancelReconnect()
     lastShow = args
+    clog.info('show', { host: args.host, title: args.title, contentType: args.contentType })
     return doShow(args)
   })
 }
@@ -291,10 +381,12 @@ async function doShow({ host, url, contentType, title = '', loop = true }) {
     if (isVideo && loop) {
       try {
         await loadMediaLooping(player, media)
-      } catch {
+      } catch (err) {
         // Receiver senza supporto alle code: fallback al reload manuale
         // quando il video finisce (IDLE/FINISHED). File in cache HTTP →
-        // ripartenza rapida ma con un breve gap.
+        // ripartenza rapida ma con un breve gap. Warn perché è la TV che
+        // rifiuta queueLoad, utile da sapere quali modelli lo fanno.
+        clog.warn('queueLoad rifiutata dal receiver, fallback al reload manuale', { err: err.message })
         player.on('status', (st) => {
           if (
             session && session.player === player &&
@@ -313,10 +405,12 @@ async function doShow({ host, url, contentType, title = '', loop = true }) {
     throw err
   }
   session = { client, player, host, title }
+  sessionStartedAt = Date.now()
   // La TV può chiudere il receiver (torna alla home) lasciando la socket viva:
   // l'evento 'close' dell'application è l'unico segnale
   player.on('close', () => {
     if (session && session.player === player) {
+      logSessionLoss('player-close')
       closeSession()
       scheduleReconnect()
     }
@@ -330,6 +424,7 @@ async function doShow({ host, url, contentType, title = '', loop = true }) {
 // nostro media server.
 function blank({ url }) {
   return queued(async () => {
+    clog.info('blank', { url })
     // D'ora in poi l'ultimo media è il nero: se la sessione cade e si
     // riconnette, torna al nero e non al visual fermato
     if (lastShow) lastShow = { ...lastShow, url, contentType: 'image/png', title: '', loop: false }
@@ -355,6 +450,7 @@ function blank({ url }) {
 function stop() {
   return queued(async () => {
     cancelReconnect()
+    clog.info('stop', { title: session?.title ?? lastShow?.title ?? null })
     lastShow = null
     if (!session) return { casting: false }
     const { client, player } = session

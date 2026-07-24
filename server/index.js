@@ -13,6 +13,7 @@ const store = require('./lib/store')
 const ytdlp = require('./lib/ytdlp')
 const cast = require('./lib/cast')
 const viewer = require('./lib/viewer')
+const log = require('./lib/log')
 const { serveMedia, contentTypeFor, BLANK_PNG } = require('./lib/media')
 const { ensureLoopPlaylist } = require('./lib/hlsloop')
 const { DATA_DIR, RENDERER_DIR, BIN_DIR, ensureDataDirs } = require('./lib/paths')
@@ -21,6 +22,10 @@ const PORT = Number(process.env.PORT) || 8080
 const HOST = process.env.HOST || '0.0.0.0'
 
 ensureDataDirs()
+log.init(DATA_DIR)
+// Fire-and-forget: la diagnostica d'ambiente non deve mai ritardare
+// l'apertura del server, anche se una sonda si comporta male
+require('./lib/diagnostics').logEnvironment().catch(() => {})
 
 const app = express()
 app.use(express.json({ limit: '25mb' }))
@@ -64,6 +69,19 @@ app.post('/api/library/import', express.raw({ type: '*/*', limit: '500mb' }), (r
 
 app.get('/api/settings', (_req, res) => res.json(store.getSettings()))
 app.post('/api/settings', (req, res) => res.json(store.saveSettings(req.body)))
+
+// Il logging non deve mai rompersi lato client: risponde sempre 200/ok,
+// anche con input malformato (stesso contratto dell'IPC 'log:write' Electron).
+const LOG_LEVELS = ['debug', 'info', 'warn', 'error']
+app.post('/api/log', (req, res) => {
+  const { level, scope, msg, fields } = req.body || {}
+  const lvl = LOG_LEVELS.includes(level) ? level : 'info'
+  const scopedName = `ui:${String(scope ?? '').slice(0, 200)}`
+  const text = String(msg ?? '').slice(0, 500)
+  const safeFields = fields && typeof fields === 'object' && !Array.isArray(fields) ? fields : undefined
+  log[lvl](scopedName, text, safeFields)
+  res.json({ ok: true })
+})
 
 app.get('/api/config/export', (_req, res) => {
   const name = `soundboard-export-${new Date().toISOString().slice(0, 10)}.dnds`
@@ -238,4 +256,5 @@ app.get(/.*/, (_req, res) => serveShell(res))
 
 server.listen(PORT, HOST, () => {
   console.log(`DnD Soundboard server su http://${HOST}:${PORT}  (dati: ${DATA_DIR})`)
+  log.info('app', 'avvio', { port: PORT, node: process.versions.node, platform: process.platform, arch: process.arch })
 })

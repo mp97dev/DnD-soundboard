@@ -3,11 +3,13 @@ const path = require('path')
 const fs = require('fs')
 const { Readable } = require('stream')
 const { DATA_DIR, ensureDataDirs } = require('./paths')
+const log = require('../server/lib/log')
 const registerFilesystemIpc = require('./ipc/filesystem')
 const registerSettingsIpc = require('./ipc/settings')
 const registerYtdlpIpc = require('./ipc/ytdlp')
 const registerConfigIpc = require('./ipc/config')
 const registerCastIpc = require('./ipc/cast')
+const registerLogIpc = require('./ipc/log')
 
 // WSL: la GPU virtuale causa errori di rendering (popup dei select inclusi)
 function isWSL() {
@@ -17,7 +19,8 @@ function isWSL() {
     return false
   }
 }
-if (isWSL()) app.disableHardwareAcceleration()
+const hwAccelDisabled = isWSL()
+if (hwAccelDisabled) app.disableHardwareAcceleration()
 
 // Protocollo custom: media://<relative-path> -> file dentro DATA_DIR.
 // Il renderer non tocca mai il filesystem direttamente.
@@ -62,6 +65,19 @@ function createWindow() {
 
 app.whenReady().then(() => {
   ensureDataDirs()
+  log.init(DATA_DIR)
+  // Fire-and-forget: la diagnostica d'ambiente non deve mai ritardare
+  // l'apertura della finestra, anche se una sonda si comporta male
+  require('../server/lib/diagnostics').logEnvironment().catch(() => {})
+  log.info('app', 'avvio', {
+    appVersion: app.getVersion(),
+    electron: process.versions.electron,
+    chrome: process.versions.chrome,
+    node: process.versions.node,
+    platform: process.platform,
+    arch: process.arch,
+    hwAccelDisabled
+  })
 
   // Con standard:true l'URL media://library/downloaded/x.mp3 viene parsato
   // come host="library" + pathname="/downloaded/x.mp3": li ricomponiamo.
@@ -142,6 +158,7 @@ app.whenReady().then(() => {
   registerYtdlpIpc()
   registerConfigIpc()
   registerCastIpc()
+  registerLogIpc()
 
   createWindow()
 
