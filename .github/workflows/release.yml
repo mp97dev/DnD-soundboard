@@ -5,6 +5,8 @@
 # - workflow_dispatch     → solo build, artifact scaricabili dalla run (niente release)
 #
 # Per pubblicare: `npm version 0.2.0 && git push --follow-tags`
+# Beta: `npm version 0.3.0-beta.1` → il tag ha un suffisso e la release viene
+# marcata prerelease (non diventa la "Latest").
 #
 # Code signing Windows (opzionale): se i secret WINDOWS_CSC_LINK e
 # WINDOWS_CSC_KEY_PASSWORD sono configurati, electron-builder firma
@@ -117,6 +119,9 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: DnD Soundboard ${{ github.ref_name }}
+          # Un tag con suffisso semver (v0.3.0-beta.1) è una prerelease: non
+          # deve diventare la "Latest release" che scarica chi passa di qui.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           # Sull'evento `release` le note scritte a mano non vengono sovrascritte
           body_path: ${{ github.event_name == 'release' && '' || 'CHANGELOG.md' }}
           files: |
