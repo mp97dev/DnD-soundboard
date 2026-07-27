@@ -13,9 +13,9 @@ const store = require('./lib/store')
 const ytdlp = require('./lib/ytdlp')
 const cast = require('./lib/cast')
 const viewer = require('./lib/viewer')
+const visuals = require('./lib/visuals')
 const log = require('./lib/log')
-const { serveMedia, contentTypeFor, BLANK_PNG } = require('./lib/media')
-const { ensureLoopPlaylist } = require('./lib/hlsloop')
+const { serveMedia, BLANK_PNG } = require('./lib/media')
 const { DATA_DIR, RENDERER_DIR, BIN_DIR, ensureDataDirs } = require('./lib/paths')
 
 const PORT = Number(process.env.PORT) || 8080
@@ -70,16 +70,11 @@ app.post('/api/library/import', express.raw({ type: '*/*', limit: '500mb' }), (r
 app.get('/api/settings', (_req, res) => res.json(store.getSettings()))
 app.post('/api/settings', (req, res) => res.json(store.saveSettings(req.body)))
 
-// Il logging non deve mai rompersi lato client: risponde sempre 200/ok,
-// anche con input malformato (stesso contratto dell'IPC 'log:write' Electron).
-const LOG_LEVELS = ['debug', 'info', 'warn', 'error']
+// Il logging non deve mai rompersi lato client: risponde sempre 200/ok, anche
+// con input malformato. La normalizzazione vive in log.fromClient(), condivisa
+// con l'IPC 'log:write' di Electron.
 app.post('/api/log', (req, res) => {
-  const { level, scope, msg, fields } = req.body || {}
-  const lvl = LOG_LEVELS.includes(level) ? level : 'info'
-  const scopedName = `ui:${String(scope ?? '').slice(0, 200)}`
-  const text = String(msg ?? '').slice(0, 500)
-  const safeFields = fields && typeof fields === 'object' && !Array.isArray(fields) ? fields : undefined
-  log[lvl](scopedName, text, safeFields)
+  log.fromClient(req.body)
   res.json({ ok: true })
 })
 
@@ -142,67 +137,60 @@ app.post('/api/ytdlp/redownload', async (req, res) => {
 // ---------- Chromecast ----------
 // Il cast parte da QUI (Node), non dal browser: il server ordina al
 // Chromecast di scaricare il media dal proprio endpoint /media/.
+// URL con cui TV e tablet raggiungono QUESTO server: l'host con cui il client
+// ha raggiunto il server (se non è localhost), altrimenti l'IP LAN rilevato.
+function baseUrl(req) {
+  const reqHost = String(req.headers.host || '').split(':')[0]
+  const usable = reqHost && !['localhost', '127.0.0.1'].includes(reqHost) ? reqHost : cast.lanIp()
+  if (!usable) throw new Error('Impossibile determinare l\'IP LAN del server')
+  return `http://${usable}:${PORT}`
+}
+
+function ffmpegPath() {
+  const local = path.join(BIN_DIR, 'ffmpeg')
+  return fs.existsSync(local) ? local : 'ffmpeg'
+}
+
 app.get('/api/cast/devices', (_req, res) => res.json(cast.listDevices()))
-app.get('/api/cast/status', (_req, res) => res.json(cast.status()))
+app.get('/api/cast/status', (_req, res) => res.json(visuals.status()))
 app.post('/api/cast/stop', async (_req, res) => {
-  viewer.clear()
-  res.json(await cast.stop())
+  res.json(await visuals.stop())
 })
 app.post('/api/cast/show', async (req, res) => {
-  const { host, path: mediaPath, title } = req.body || {}
+  const { host, path: mediaPath, title, visualId } = req.body || {}
   try {
-    viewer.setCurrent(mediaPath, contentTypeFor(mediaPath), title)
-    // Nessuna TV selezionata: modalità solo-viewer, niente Chromecast da contattare
-    if (!host) return res.json({ casting: false })
-
-    // URL raggiungibile dalla TV: l'host con cui il client ha raggiunto il
-    // server (se non è localhost), altrimenti l'IP LAN rilevato.
-    const reqHost = String(req.headers.host || '').split(':')[0]
-    const usable = reqHost && !['localhost', '127.0.0.1'].includes(reqHost) ? reqHost : cast.lanIp()
-    if (!usable) throw new Error('Impossibile determinare l\'IP LAN del server')
-
-    // Video → HLS con playlist che ripete i segmenti: loop senza overlay né
-    // reload sul receiver. Se la segmentazione non riesce, mp4 diretto.
-    let rel = mediaPath
-    let contentType = contentTypeFor(mediaPath)
-    if (contentType.startsWith('video/')) {
-      const ffmpegLocal = path.join(BIN_DIR, 'ffmpeg')
-      const hls = await ensureLoopPlaylist({
-        dataDir: DATA_DIR,
-        mediaRel: mediaPath,
-        ffmpegPath: fs.existsSync(ffmpegLocal) ? ffmpegLocal : 'ffmpeg'
-      })
-      if (hls) {
-        rel = hls
-        contentType = 'application/vnd.apple.mpegurl'
-      }
-    }
-    const url = `http://${usable}:${PORT}/media/${rel.split('/').map(encodeURIComponent).join('/')}`
-    res.json(await cast.show({ host, url, contentType, title }))
+    res.json(await visuals.show({
+      host,
+      mediaPath,
+      title,
+      visualId,
+      // Solo-viewer (host null): nessuna TV da contattare, e quindi nessun URL
+      // da costruire — un PC senza IP LAN deve poter usare comunque il tablet.
+      urlBase: host ? baseUrl(req) : null,
+      dataDir: DATA_DIR,
+      ffmpegPath: ffmpegPath()
+    }))
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
 })
 
 app.post('/api/cast/blank', async (req, res) => {
-  viewer.clear()
   try {
-    const reqHost = String(req.headers.host || '').split(':')[0]
-    const usable = reqHost && !['localhost', '127.0.0.1'].includes(reqHost) ? reqHost : cast.lanIp()
-    if (!usable) throw new Error('Impossibile determinare l\'IP LAN del server')
-    res.json(await cast.blank({ url: `http://${usable}:${PORT}/blank.png` }))
+    res.json(await visuals.blank({ urlBase: baseUrl(req) }))
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
 })
 
-app.get('/api/cast/current', (_req, res) => res.json(viewer.getCurrent()))
+app.get('/api/cast/current', (_req, res) => res.json(visuals.currentForViewer()))
 app.get('/viewer', (_req, res) => res.type('html').send(viewer.viewerHtml()))
 app.get('/api/cast/viewer-url', (req, res) => {
-  const reqHost = String(req.headers.host || '').split(':')[0]
-  const usable = reqHost && !['localhost', '127.0.0.1'].includes(reqHost) ? reqHost : cast.lanIp()
-  if (!usable) return res.status(500).json({ error: 'Impossibile determinare l\'IP LAN del server' })
-  res.json({ url: `http://${usable}:${PORT}/viewer` })
+  try {
+    res.json({ url: visuals.viewerUrl(baseUrl(req)) })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
 })
 
 // ---------- Media (con supporto Range) ----------

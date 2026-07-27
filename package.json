@@ -45,7 +45,8 @@
     "files": [
       "dist/renderer/**",
       "electron/**",
-      "server/lib/**"
+      "server/lib/**",
+      "server/viewer.html"
     ],
     "directories": {
       "output": "dist/out"

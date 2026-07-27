@@ -74,10 +74,41 @@
     stage.appendChild(el)
   }
 
+  // Intervallo base e backoff. Questa pagina sta aperta per tutta la sessione
+  // di gioco su un tablet in WiFi: ogni giro costa tempo d'antenna sui 2.4 GHz,
+  // la stessa banda che serve alla TV per scaricarsi il media. Quindi:
+  // - a schermo spento/scheda in background non si interroga affatto (si
+  //   riparte subito al risveglio, così il visual è già lì quando si guarda);
+  // - se l'host non risponde si rallenta invece di martellare per ore;
+  // - la risposta invariata torna come 304 senza corpo grazie all'ETag.
+  var POLL_MS = 1500
+  var MAX_POLL_MS = 30000
+  var UNCHANGED = {}
+  var etag = null
+  var delay = POLL_MS
+  var timer = null
+
+  function schedule(ms) {
+    clearTimeout(timer)
+    timer = setTimeout(poll, ms)
+  }
+
   function poll() {
-    fetch('/api/cast/current')
-      .then(function (r) { return r.json() })
+    if (document.hidden) return schedule(POLL_MS) // niente rete a schermo spento
+    var headers = etag ? { 'If-None-Match': etag } : undefined
+    // no-store: la cache del browser non deve rispondere al posto nostro, la
+    // rivalidazione la gestiamo noi con l'ETag qui sopra.
+    fetch('/api/cast/current', { headers: headers, cache: 'no-store' })
+      .then(function (r) {
+        delay = POLL_MS
+        // Sentinella e non null: `null` è una risposta legittima del server
+        // (nessun visual in corso) e deve svuotare lo schermo.
+        if (r.status === 304) return UNCHANGED
+        etag = r.headers.get('ETag')
+        return r.json()
+      })
       .then(function (cur) {
+        if (cur === UNCHANGED) return
         if (!cur || !cur.rel) {
           if (lastRel !== null) { lastRel = null; lastTs = null; showNothing() }
           return
@@ -87,12 +118,19 @@
         lastRel = cur.rel
         showMedia(cur)
       })
-      .catch(function () { /* riprova al prossimo giro */ })
+      .catch(function () {
+        // Host sparito (PC chiuso, WiFi caduto): rallenta fino a 30s.
+        delay = Math.min(delay * 2, MAX_POLL_MS)
+      })
+      .then(function () { schedule(delay) })
   }
+
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) { delay = POLL_MS; schedule(0) }
+  })
 
   showCaption()
   poll()
-  setInterval(poll, 1500)
 })()
 </script>
 </body>

@@ -1,16 +1,8 @@
-// Stato del visual corrente per la pagina /viewer (tablet/browser sulla LAN).
-// Tiene il percorso ORIGINALE del media (non la variante HLS del Chromecast):
-// i browser riproducono direttamente mp4/immagini da /media/.
+// Pagina /viewer (tablet/browser sulla LAN): qui solo il caricamento dell'HTML.
+// Lo stato di "cosa si sta mostrando" NON sta qui — è lo stesso stato che
+// governa il Chromecast e vive in visuals.js, in un posto solo.
 const fs = require('fs')
 const path = require('path')
-
-let current = null // { rel, contentType, title, ts }
-
-function setCurrent(rel, contentType, title = '') {
-  current = { rel, contentType, title, ts: Date.now() }
-}
-function clear() { current = null }
-function getCurrent() { return current }
 
 let html = null
 function viewerHtml() {
@@ -18,4 +10,4 @@ function viewerHtml() {
   return html
 }
 
-module.exports = { setCurrent, clear, getCurrent, viewerHtml }
+module.exports = { viewerHtml }

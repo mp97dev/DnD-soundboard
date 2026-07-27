@@ -78,7 +78,7 @@
     cast: {
       devices: () => get('/api/cast/devices'),
       status: () => get('/api/cast/status'),
-      show: ({ host, path, title }) => post('/api/cast/show', { host, path, title }),
+      show: ({ host, path, title, visualId }) => post('/api/cast/show', { host, path, title, visualId }),
       blank: () => post('/api/cast/blank', {}),
       stop: () => post('/api/cast/stop', {}),
       viewerUrl: () => get('/api/cast/viewer-url').then((r) => r.url)

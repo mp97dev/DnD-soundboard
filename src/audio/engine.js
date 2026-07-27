@@ -121,8 +121,45 @@ const STALL_TIMEOUT_MS = 3000 // abbastanza per un blip di rete, non tanto da se
 const STABLE_PLAYBACK_MS = 15000
 const FADE_TICK_MS = 50 // granularità della rampa esponenziale sull'elemento
 
+// Il guasto tipico (cassa Bluetooth che sparisce, cambio di profilo A2DP/HSP)
+// non colpisce UN file: colpisce l'uscita audio, quindi tutte le voci vive
+// insieme. Senza coordinamento, musica + 4 ambience ricostruiscono in
+// parallelo — fino a 25 teardown di elementi e altrettante play() addosso a un
+// sink che è ancora giù. Le ricostruzioni prendono un turno in una coda
+// globale: stesso backoff per voce, ma distanziate fra loro.
+const REBUILD_SLOT_MS = 250
+let nextRebuildSlot = 0
+
+function reserveRebuildSlot(backoffMs) {
+  const now = Date.now()
+  const at = Math.max(now + backoffMs, nextRebuildSlot)
+  nextRebuildSlot = at + REBUILD_SLOT_MS
+  return at - now
+}
+
+// Un guasto del sink fa fallire più voci in pochi istanti: la UI ha un solo
+// posto dove mostrare l'errore e vincerebbe l'ultima traccia in ordine
+// casuale. Contiamo i guasti ravvicinati e lasciamo che sia la UI a dire
+// "l'audio è saltato su N tracce" invece di nominarne una a caso.
+const ERROR_BURST_MS = 5000
+let lastErrorAt = 0
+let errorBurstCount = 0
+
+function notifyError(info) {
+  const now = Date.now()
+  errorBurstCount = now - lastErrorAt < ERROR_BURST_MS ? errorBurstCount + 1 : 1
+  lastErrorAt = now
+  errorHandler?.({ ...info, count: errorBurstCount })
+}
+
 function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, kind = 'stream' } = {}) {
+  // Due valori distinti e non intercambiabili: trackVolume è il volume
+  // CONFIGURATO della traccia (quello che l'utente ha scelto), outputVolume è
+  // quello istantaneo, che durante un fade sta scivolando verso il primo.
+  // Tenerne uno solo significava che ogni tick di rampa riscriveva il volume
+  // "configurato", e la rampa successiva ripartiva da un valore parziale.
   let trackVolume = volume
+  let outputVolume = volume
   let el = null
   let playing = false // true da start() riuscito a stop(): usato per il resume post-devicechange
   let destroyed = false // stop() già richiesto: non ricostruire più
@@ -132,11 +169,45 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
   let rebuildTimer = null
   let stableTimer = null
   let fadeInterval = null
+  let fade = null // { from, target, tau, ms, startedAt, onDone } della rampa in corso
+  // Un AbortController per elemento: staccare i listener è obbligatorio prima
+  // di rilasciarne uno, vedi releaseElement().
+  let elAbort = null
 
   function computeVolume() {
-    // track*master può superare 1 (entrambi possono essere >1): l'elemento
-    // lancia un'eccezione su volume fuori range, va sempre clampato.
-    return clamp01(trackVolume * masterVolume)
+    // output*master può superare 1 (entrambi possono essere >1): l'elemento
+    // lancia un'eccezione su volume fuori range, va sempre clampato. Un valore
+    // non finito lancia allo stesso modo (e clamp01(NaN) resta NaN): questo è
+    // l'unico punto da cui esce un volume, qui il fallback vale per tutti.
+    const v = outputVolume * masterVolume
+    return Number.isFinite(v) ? clamp01(v) : 1
+  }
+
+  function applyVolume() {
+    el.volume = computeVolume()
+  }
+
+  function stopFade() {
+    clearInterval(fadeInterval)
+    fadeInterval = null
+    fade = null
+  }
+
+  // Un tick solo per voce, condiviso da tutte le rampe che si susseguono:
+  // ripuntare il fade a un nuovo target aggiorna `fade`, non ricrea il timer.
+  function fadeTick() {
+    if (!fade) return stopFade()
+    const t = Date.now() - fade.startedAt
+    const value = fade.target + (fade.from - fade.target) * Math.exp(-t / fade.tau)
+    outputVolume = value
+    applyVolume()
+    if (t > fade.ms || Math.abs(value - fade.target) < 0.001) {
+      const onDone = fade.onDone
+      outputVolume = fade.target
+      applyVolume()
+      stopFade()
+      onDone?.()
+    }
   }
 
   function clearStallTimer() {
@@ -155,10 +226,14 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
     }, STALL_TIMEOUT_MS)
   }
 
-  function attachListeners(mediaEl) {
+  // Tutti i listener sono legati al signal dell'elemento: quando l'elemento
+  // viene sostituito il suo AbortController li stacca in blocco. Senza,
+  // l'elemento vecchio continuerebbe a pilotare lo stato CONDIVISO della voce
+  // (armStallTimer, currentTimeSaved, rebuild) mentre il nuovo suona bene.
+  function attachListeners(mediaEl, signal) {
     mediaEl.addEventListener('timeupdate', () => {
       currentTimeSaved = mediaEl.currentTime
-    })
+    }, { signal })
     mediaEl.addEventListener('waiting', () => {
       // Questi eventi possono scattare decine di volte al secondo durante un
       // rebuffering: throttle per non sommergere il log.
@@ -166,15 +241,15 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
         logger.warn('evento waiting', { path: audioPath })
       }
       armStallTimer('waiting')
-    })
+    }, { signal })
     mediaEl.addEventListener('stalled', () => {
       if (!rateLimited(`audio-stalled-${audioPath}`, 2000)) {
         logger.warn('evento stalled', { path: audioPath })
       }
       armStallTimer('stalled')
-    })
-    mediaEl.addEventListener('playing', clearStallTimer)
-    mediaEl.addEventListener('canplay', clearStallTimer)
+    }, { signal })
+    mediaEl.addEventListener('playing', clearStallTimer, { signal })
+    mediaEl.addEventListener('canplay', clearStallTimer, { signal })
     mediaEl.addEventListener('error', () => {
       logger.error('errore elemento audio', {
         path: audioPath,
@@ -183,7 +258,7 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
       })
       clearStallTimer()
       rebuild('error')
-    })
+    }, { signal })
     mediaEl.addEventListener('ended', () => {
       // loop=true e l'elemento si è fermato comunque: il loop nativo si è
       // rotto (capita su alcuni stream HLS/di rete), va rifatto a mano.
@@ -191,7 +266,32 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
         logger.warn('loop interrotto, ricostruzione', { path: audioPath })
         rebuild('ended-loop')
       }
-    })
+    }, { signal })
+  }
+
+  // Stacca i listener e rilascia decoder/stream di un elemento che non serve
+  // più. L'ordine NON è negoziabile: removeAttribute('src') + load() fanno
+  // emettere 'error' all'elemento, che senza abort rientrerebbe in rebuild().
+  function releaseElement(target, abort) {
+    if (!target) return
+    try { abort?.abort() } catch { /* controller già usato */ }
+    try {
+      target.pause()
+      target.removeAttribute('src')
+      target.load()
+    } catch { /* elemento già morto: ignora */ }
+  }
+
+  // Parte comune di ogni fine-vita della voce (stop volontario, avvio fallito,
+  // budget di ricostruzioni esaurito): niente più timer, niente più rebuild,
+  // fuori dal registro delle voci vive. NON tocca fadeInterval: vedi stop().
+  function releaseVoice() {
+    playing = false
+    destroyed = true
+    clearStallTimer()
+    clearTimeout(rebuildTimer)
+    clearTimeout(stableTimer)
+    liveStreamVoices.delete(voiceApi)
   }
 
   function createElement(startAt) {
@@ -206,7 +306,8 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
     e.preload = 'auto'
     e.volume = computeVolume()
     if (startAt > 0) e.currentTime = startAt
-    attachListeners(e)
+    elAbort = new AbortController()
+    attachListeners(e, elAbort.signal)
     return e
   }
 
@@ -214,22 +315,34 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
     if (destroyed) return
     if (rebuildAttempts >= MAX_REBUILD_ATTEMPTS) {
       logger.error('troppi tentativi di ricostruzione, rinuncio', { path: audioPath, attempts: rebuildAttempts, reason })
-      errorHandler?.({ trackId, path: audioPath, message: `Traccia audio non recuperabile dopo ${rebuildAttempts} tentativi: ${audioPath}` })
+      // Rinunciare significa fine-vita: senza questo la voce resterebbe in
+      // liveStreamVoices con elemento e listener vivi per tutta la sessione.
+      const dead = el
+      const deadAbort = elAbort
+      releaseVoice()
+      releaseElement(dead, deadAbort)
+      notifyError({ trackId, path: audioPath, message: `Traccia audio non recuperabile dopo ${rebuildAttempts} tentativi: ${audioPath}` })
       return
     }
     clearTimeout(stableTimer) // guasto nuovo: il conto della stabilità riparte
+    // Due eventi ravvicinati (es. 'error' subito dopo 'ended') schedulerebbero
+    // due ricostruzioni: la seconda sovrascriverebbe `el` lasciando l'elemento
+    // creato dalla prima orfano, vivo e senza nessuno che lo rilasci.
+    clearTimeout(rebuildTimer)
     rebuildAttempts += 1
     const attempt = rebuildAttempts
     const resumeAt = currentTimeSaved
-    const backoff = 500 * attempt // backoff crescente: non martellare un file/rete già in difficoltà
+    // Backoff crescente (non martellare un file/rete già in difficoltà) più il
+    // turno nella coda globale (non martellare un SINK già in difficoltà con
+    // tutte le voci insieme).
+    const backoff = reserveRebuildSlot(500 * attempt)
     logger.warn('ricostruzione voce audio', { path: audioPath, attempt, resumeAt, reason, backoffMs: backoff })
     const old = el
+    const oldAbort = elAbort
     rebuildTimer = setTimeout(async () => {
       rebuildTimer = null
       if (destroyed) return
-      try {
-        old?.pause()
-      } catch { /* elemento già morto: ignora */ }
+      releaseElement(old, oldAbort)
       el = createElement(resumeAt)
       try {
         await el.play()
@@ -249,32 +362,36 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
   el = createElement(0)
   const voiceApi = {
     setVolume(v) {
+      stopFade() // un set esplicito vince su una rampa in corso
       trackVolume = v
-      el.volume = computeVolume()
+      outputVolume = v
+      applyVolume()
     },
     // Rampa esponenziale sul volume dell'elemento: stessa curva usata per i
     // buffer (vedi commento su fadeIn/fadeOutAndStop) applicata a mano con un
     // tick, perché HTMLMediaElement.volume non ha un AudioParam da
     // automatizzare nativamente.
+    //
+    // Ripuntabile a costo zero: lo slider del volume emette su @input, cioè
+    // decine di eventi al secondo mentre l'utente trascina. Ricreare il timer
+    // ad ogni evento (com'era) voleva dire ~60 setInterval al secondo, e ogni
+    // rampa che ripartiva da un valore parziale faceva ritardare il volume
+    // rispetto alla manopola. Qui il timer è uno solo: cambia solo il target.
     fadeTo(v, ms, onDone) {
-      clearInterval(fadeInterval)
-      const startVolume = trackVolume
-      const target = v
-      const tau = Math.max(ms, 1) / 4 // stesse unità (ms) di t: niente conversioni
-      const startedAt = Date.now()
-      fadeInterval = setInterval(() => {
-        const t = Date.now() - startedAt
-        const value = target + (startVolume - target) * Math.exp(-t / tau)
-        trackVolume = value
-        el.volume = computeVolume()
-        if (t > ms || Math.abs(value - target) < 0.001) {
-          clearInterval(fadeInterval)
-          fadeInterval = null
-          trackVolume = target
-          el.volume = computeVolume()
-          onDone?.()
-        }
-      }, FADE_TICK_MS)
+      // Un target non finito (volume assente su una traccia importata) si
+      // propagherebbe a NaN: `el.volume = NaN` lancia, e lancia DENTRO il tick,
+      // che quindi non arriva mai alla clearInterval e resta acceso per sempre.
+      const target = Number.isFinite(v) ? clamp01(v) : trackVolume
+      trackVolume = target // il target È il nuovo volume configurato, da subito
+      fade = {
+        from: outputVolume, // riparte da dove suona ORA, non dal target precedente
+        target,
+        tau: Math.max(ms, 1) / 4, // stesse unità (ms) di t: niente conversioni
+        ms,
+        startedAt: Date.now(),
+        onDone
+      }
+      if (!fadeInterval) fadeInterval = setInterval(fadeTick, FADE_TICK_MS)
     },
     async start() {
       try {
@@ -283,32 +400,31 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
         logger.info('avvio traccia', { path: audioPath, kind, volume: trackVolume })
       } catch (err) {
         logger.error('avvio fallito', { path: audioPath, message: err.message })
-        errorHandler?.({ trackId, path: audioPath, message: err.message })
+        // Un avvio fallito è definitivo: il chiamante riceve un throw e non
+        // chiamerà mai stop(). Senza questo teardown la voce resterebbe in
+        // liveStreamVoices con l'elemento vivo, e l'evento 'error' che il file
+        // mancante emette comunque farebbe partire il ciclo di ricostruzione
+        // su una traccia già data per persa (5 tentativi, 5 elementi in più).
+        releaseVoice()
+        releaseElement(el, elAbort)
+        notifyError({ trackId, path: audioPath, message: err.message })
         throw new Error(`Audio non trovato o non riproducibile: ${audioPath}`)
       }
     },
     stop(afterMs = 0) {
-      playing = false
-      destroyed = true // uno stop è intenzionale: non farlo ricostruire sotto i piedi
-      clearStallTimer()
-      clearTimeout(rebuildTimer)
-      clearTimeout(stableTimer)
-      liveStreamVoices.delete(voiceApi)
+      releaseVoice() // uno stop è intenzionale: non farlo ricostruire sotto i piedi
       logger.info('stop traccia', { path: audioPath, kind })
       setTimeout(() => {
         // Il fade in corso va fermato QUI, non all'ingresso di stop():
         // fadeOutAndStop() chiama fadeTo() e subito stop(), quindi azzerare
         // l'intervallo all'ingresso ucciderebbe la rampa prima del primo tick
         // e il fade-out diventerebbe un taglio secco a volume pieno.
-        clearInterval(fadeInterval)
-        fadeInterval = null
-        el.pause()
-        el.removeAttribute('src')
-        el.load() // rilascia il decoder/stream
+        stopFade()
+        releaseElement(el, elAbort)
       }, afterMs + 50)
     },
     applyMaster() {
-      el.volume = computeVolume()
+      applyVolume()
     },
     // Non fa parte dell'interfaccia Voice "pubblica": serve solo al gestore
     // di devicechange qui sotto per capire se questa voce va rimessa in play.
@@ -333,13 +449,78 @@ function fadeOutAndStop(voice, durationMs) {
   voice.stop(durationMs)
 }
 
+function cancelPendingMusicStart() {
+  if (!pendingMusicStart) return
+  clearTimeout(pendingMusicStart)
+  pendingMusicStart = null
+}
+
 function fadeIn(voice, targetVolume, durationMs) {
+  // track.volume può mancare (traccia arrivata da un .dnds scritto a mano o da
+  // un index.json più vecchio): makeStreamVoice ha un default, questo percorso
+  // no, e un target NaN manderebbe il fade in un loop che lancia ad ogni tick.
+  const target = Number.isFinite(targetVolume) ? targetVolume : 1
   voice.setVolume(0.0001)
-  voice.fadeTo(targetVolume, durationMs)
+  voice.fadeTo(target, durationMs)
+}
+
+// ---- Master volume ----
+// Sui buffer il master è un AudioParam con rampa nativa; sugli stream è una
+// moltiplicazione fatta a mano (vedi setMasterVolume), che senza rampa
+// trascinando lo slider zipperava il letto musicale ma non i one-shot. La
+// rampa è UNA per tutte le voci di stream: il master è uno solo.
+const MASTER_RAMP_MS = 80
+let masterFade = null // { from, target, tau, startedAt }
+let masterInterval = null
+
+function applyMasterToVoices() {
+  for (const voice of liveStreamVoices) voice.applyMaster()
+}
+
+function stopMasterFade() {
+  clearInterval(masterInterval)
+  masterInterval = null
+  masterFade = null
+}
+
+function masterTick() {
+  if (!masterFade) return stopMasterFade()
+  const t = Date.now() - masterFade.startedAt
+  const value = masterFade.target + (masterFade.from - masterFade.target) * Math.exp(-t / masterFade.tau)
+  masterVolume = value
+  applyMasterToVoices()
+  if (t > MASTER_RAMP_MS || Math.abs(value - masterFade.target) < 0.001) {
+    masterVolume = masterFade.target
+    stopMasterFade()
+    applyMasterToVoices()
+  }
+}
+
+function rampMaster(target) {
+  if (!liveStreamVoices.size) {
+    // Niente stream vivi: nessuna rampa da fare, il master lo applicherà
+    // computeVolume() alla prima voce che parte.
+    stopMasterFade()
+    masterVolume = target
+    return
+  }
+  masterFade = {
+    from: masterVolume,
+    target,
+    tau: MASTER_RAMP_MS / 4,
+    startedAt: Date.now()
+  }
+  if (!masterInterval) masterInterval = setInterval(masterTick, FADE_TICK_MS)
 }
 
 // ---- Stato canali ----
 let musicVoice = null // { trackId, voice }
+// Avvio ritardato del ramo 'fade' di playMusic: va tenuto per poterlo
+// ANNULLARE. Senza, uno stopMusic/stopAll dentro la finestra di fade non
+// trovava ancora nessuna voce da fermare, e il timer faceva poi partire una
+// traccia che la UI dava per spenta — orfana, e con la recovery attiva ormai
+// capace di sopravvivere a se stessa per tutta la sessione.
+let pendingMusicStart = null
 const ambienceVoices = new Map() // trackId -> voice
 
 // Chromium può lasciare gli elementi in pausa (o muti) dopo uno switch di
@@ -354,10 +535,9 @@ navigator.mediaDevices?.addEventListener('devicechange', () => {
 // pubblica chiama ctx.suspend()): quindi se lo stato esce da "running" è
 // sempre un evento esterno (policy del browser, perdita del device) e va
 // ripreso subito, altrimenti anche i one-shot restano muti.
-let intentionalSuspend = false
 ctx.onstatechange = () => {
   logger.info('stato AudioContext cambiato', { state: ctx.state })
-  if (ctx.state !== 'running' && !intentionalSuspend) {
+  if (ctx.state !== 'running') {
     ctx.resume().catch((err) => logger.warn('resume AudioContext fallito', { message: err.message }))
   }
 }
@@ -375,14 +555,15 @@ export const engine = {
   // vantaggio collaterale: se l'AudioContext si inceppa, si perdono solo i
   // one-shot, non il letto musicale.
   setMasterVolume(v) {
-    masterVolume = v
-    for (const voice of liveStreamVoices) voice.applyMaster()
-    masterGain.gain.setTargetAtTime(v, ctx.currentTime, 0.02)
+    const target = Number.isFinite(v) ? v : 1
+    masterGain.gain.setTargetAtTime(target, ctx.currentTime, 0.02) // one-shot: rampa nativa
+    rampMaster(target) // stream: stessa rampa, fatta a mano
   },
 
   setTrackVolume(trackId, v) {
     // Rampa breve (80ms ~ vecchio tau*4) invece di un salto secco: evita lo
-    // zipper noise quando l'utente trascina lo slider del volume.
+    // zipper noise quando l'utente trascina lo slider del volume. Chiamarla ad
+    // ogni evento @input non costa timer: fadeTo ripunta la rampa esistente.
     if (musicVoice?.trackId === trackId) musicVoice.voice.fadeTo(v, 80)
     const amb = ambienceVoices.get(trackId)
     if (amb) amb.fadeTo(v, 80)
@@ -391,6 +572,7 @@ export const engine = {
   // ---- Music: canale esclusivo con transizioni ----
   async playMusic(track, { transition = 'crossfade', duration = 3000 } = {}) {
     await ctx.resume()
+    cancelPendingMusicStart() // una nuova traccia annulla quella ancora in attesa
     const fading = transition === 'crossfade' || transition === 'fade'
 
     const startNew = async () => {
@@ -420,11 +602,18 @@ export const engine = {
     } else {
       // fade: prima out, poi in
       fadeOutAndStop(old.voice, duration)
-      setTimeout(() => startNew().catch(() => {}), duration)
+      pendingMusicStart = setTimeout(() => {
+        pendingMusicStart = null
+        startNew().catch(() => {})
+      }, duration)
     }
   },
 
   stopMusic({ duration = 1000 } = {}) {
+    // Prima di tutto: se c'è un avvio in attesa (ramo 'fade'), fermarlo. La
+    // voce non esiste ancora, quindi il controllo su musicVoice qui sotto la
+    // lascerebbe partire dopo lo stop.
+    cancelPendingMusicStart()
     if (!musicVoice) return
     fadeOutAndStop(musicVoice.voice, duration)
     musicVoice = null

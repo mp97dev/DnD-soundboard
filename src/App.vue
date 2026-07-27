@@ -151,7 +151,7 @@ async function importConfig() {
         </select>
         <button
           v-if="playback.activeCastId || playback.castConnected || playback.castReconnecting"
-          title="Disconnetti la TV"
+          :title="settings.castDeviceHost ? 'Disconnetti la TV' : 'Togli il visual dal viewer'"
           @click="playback.stopCast()"
         >✕</button>
       </div>

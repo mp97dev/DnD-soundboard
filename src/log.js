@@ -16,7 +16,13 @@ function serializeFields(fields) {
 
 function send(level, scope, msg, fields) {
   try {
-    window.api?.log?.write({ level, scope, msg, fields: serializeFields(fields) })
+    // Il try/catch prende solo i throw sincroni (es. un campo che non passa lo
+    // structured clone del contextBridge). In Electron write() è un
+    // ipcRenderer.invoke, quindi una promise: senza .catch() un handler assente
+    // o in errore diventa una unhandled rejection, contro il "mai fatale" qui sopra.
+    Promise.resolve(
+      window.api?.log?.write({ level, scope, msg, fields: serializeFields(fields) })
+    ).catch(() => {})
   } catch { /* mai propagare: il logging non deve rompere il chiamante */ }
 }
 

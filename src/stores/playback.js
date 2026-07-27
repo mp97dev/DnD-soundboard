@@ -21,8 +21,13 @@ export const usePlaybackStore = defineStore('playback', {
     // App.vue, non lazy nel trigger: qui non dipende da un'azione utente e
     // deve essere pronta prima del primo click.
     initAudio() {
-      engine.setErrorHandler(({ path, message }) => {
-        this.audioError = `Audio non riproducibile: ${path ?? message}`
+      // count > 1 = più voci cadute a breve distanza: è saltata l'uscita audio,
+      // non un file. Nominare una traccia a caso (l'ultima arrivata) sarebbe
+      // fuorviante proprio nel caso in cui l'utente ha più bisogno di capire.
+      engine.setErrorHandler(({ path, message, count }) => {
+        this.audioError = count > 1
+          ? `Audio interrotto su ${count} tracce: controlla l'uscita audio (${message})`
+          : `Audio non riproducibile: ${path ?? message}`
       })
     },
     // Bottone della board: può avere una traccia audio, un visual da castare,
@@ -45,9 +50,10 @@ export const usePlaybackStore = defineStore('playback', {
         const res = await window.api.cast.show({
           host: settings.castDeviceHost,
           path: visual.mediaPath,
-          title: visual.title
+          title: visual.title,
+          visualId: visual.id
         })
-        this.activeCastId = visual.id
+        this.activeCastId = res.visualId ?? visual.id
         this.castConnected = !!res.casting
       } catch (e) {
         this.castError = `Cast fallito: ${e.message}`
@@ -69,18 +75,18 @@ export const usePlaybackStore = defineStore('playback', {
         await window.api.cast.blank()
       } catch { /* la TV può essere già spenta */ }
     },
-    // Poll periodico: aggiorna lo stato di riconnessione e spegne l'evidenza
-    // del bottone se la sessione è definitivamente persa
+    // Poll periodico. Lo stato del cast lo tiene l'host — è lui a sapere se la
+    // sessione è viva, se sta riagganciando e quale visual è su schermo (TV o
+    // tablet che sia): qui lo si ricopia e basta. Quando la regola stava anche
+    // di qua, il renderer doveva leggersi le impostazioni per sapere se c'era
+    // una TV, e perdeva il visual attivo ad ogni reload della pagina mentre TV
+    // e tablet continuavano tranquillamente a mostrarlo.
     async syncCastStatus() {
       try {
         const st = await window.api.cast.status()
         this.castReconnecting = !!st.reconnecting
         this.castConnected = !!st.casting
-        const settings = useSettingsStore()
-        // Solo-viewer (nessuna TV selezionata): non esiste una sessione cast da
-        // monitorare, lo stato del bottone non va spento
-        if (!settings.castDeviceHost) return
-        if (!st.casting && !st.reconnecting && this.activeCastId) this.activeCastId = null
+        this.activeCastId = st.visualId ?? null
       } catch { /* backend non raggiungibile: lascia lo stato com'è */ }
     },
     async trigger(track) {

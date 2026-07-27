@@ -9,6 +9,14 @@ const ytUrl = ref('')
 // Tutti i tag noti (usati + suggeriti), per il datalist dell'editor inline
 const knownTags = computed(() => [...new Set([...library.allTags, ...TAG_SUGGESTIONS])])
 
+// Chip del filtro: i tag presenti in libreria PIÙ quelli ancora attivi che non
+// esistono più su nessuna traccia. Senza questi ultimi, togliere l'ultimo tag
+// "castello" mentre il filtro su "castello" è attivo farebbe sparire il chip
+// ma non il filtro: libreria vuota e nessun modo visibile per sbloccarla.
+const filterTags = computed(() =>
+  [...new Set([...library.allTags, ...library.tagFilter])].sort((a, b) => a.localeCompare(b))
+)
+
 // ---- Anteprima audio: un solo elemento condiviso, un solo player attivo ----
 const previewId = ref(null)
 let previewEl = null
@@ -82,24 +90,33 @@ function cycleThumbSize() {
 }
 
 // ---- Ridimensionamento sidebar: trascinamento del bordo destro ----
-const sidebarWidth = ref(Number(localStorage.librarySidebarWidth) || 260)
 function clampWidth(w) {
   return Math.min(520, Math.max(200, w))
 }
+// Clamp anche in lettura: un valore fuori range (versione precedente con altri
+// limiti, localStorage modificato a mano) non deve sopravvivere al riavvio.
+const sidebarWidth = ref(clampWidth(Number(localStorage.librarySidebarWidth) || 260))
 function onResizeStart(e) {
   e.preventDefault()
   const startX = e.clientX
   const startWidth = sidebarWidth.value
+  const handle = e.currentTarget
   function onMove(ev) {
     sidebarWidth.value = clampWidth(startWidth + (ev.clientX - startX))
   }
-  function onUp() {
+  function onEnd() {
     window.removeEventListener('pointermove', onMove)
-    window.removeEventListener('pointerup', onUp)
+    window.removeEventListener('pointerup', onEnd)
+    window.removeEventListener('pointercancel', onEnd)
     localStorage.librarySidebarWidth = sidebarWidth.value
   }
+  // Con la cattura del puntatore il drag termina anche se il mouse esce dalla
+  // finestra: senza, quel pointerup si perde, i listener restano attaccati e la
+  // sidebar continua a inseguire il mouse a pulsante rilasciato.
+  try { handle.setPointerCapture(e.pointerId) } catch { /* browser senza capture */ }
   window.addEventListener('pointermove', onMove)
-  window.addEventListener('pointerup', onUp)
+  window.addEventListener('pointerup', onEnd)
+  window.addEventListener('pointercancel', onEnd)
 }
 
 // Download annullabili (in coda o in corso)
@@ -176,9 +193,9 @@ function onDragStart(e, track) {
 
     <input v-model="library.search" placeholder="Cerca per nome o tag..." class="search" />
 
-    <div v-if="library.allTags.length" class="tag-filters">
+    <div v-if="filterTags.length" class="tag-filters">
       <span
-        v-for="tag in library.allTags"
+        v-for="tag in filterTags"
         :key="tag"
         class="tag-chip"
         :class="{ active: library.tagFilter.includes(tag) }"
@@ -458,7 +475,12 @@ h4 { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; color: var(-
 .missing-badge { flex-shrink: 0; font-size: 12px; color: var(--danger); }
 .local-missing { color: var(--danger); font-size: 12px; margin: 0; }
 .error { color: var(--danger); font-size: 12px; margin: 0; }
-.sections { flex: 1; overflow-y: auto; }
+/* min-height:0 annulla il min-height:auto di default dei flex item: senza,
+   .sections si rifiuta di rimpicciolirsi sotto il suo contenuto e a traboccare
+   è la .sidebar. Che scrolla — portandosi via .resize-handle, che è absolute
+   rispetto al padding box e quindi scorre col contenuto invece di restare
+   agganciata al bordo. */
+.sections { flex: 1; min-height: 0; overflow-y: auto; }
 .track {
   display: flex; align-items: center; gap: 8px;
   padding: 7px 8px;

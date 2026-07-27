@@ -22,7 +22,7 @@ contextBridge.exposeInMainWorld('api', {
   cast: {
     devices: () => invoke('cast:devices'),
     status: () => invoke('cast:status'),
-    show: ({ host, path, title }) => invoke('cast:show', { host, path, title }),
+    show: ({ host, path, title, visualId }) => invoke('cast:show', { host, path, title, visualId }),
     blank: () => invoke('cast:blank'),
     stop: () => invoke('cast:stop'),
     viewerUrl: () => invoke('cast:viewerUrl')
