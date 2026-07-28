@@ -23,6 +23,13 @@ function ffmpegPath() {
   return fs.existsSync(bin) ? bin : 'ffmpeg'
 }
 
+// Corpo, ETag e header li decide viewer.js (stesse risposte servite dal server
+// LAN); qui resta solo come scriverli su una res di http.createServer.
+function sendViewerResponse(res, { status, headers, body }) {
+  res.writeHead(status, headers)
+  return body === null ? res.end() : res.end(body)
+}
+
 let mediaServer = null
 let mediaPort = null
 
@@ -46,34 +53,10 @@ function ensureMediaServer() {
         return req.method === 'HEAD' ? res.end() : res.end(BLANK_PNG)
       }
       if (url === '/viewer' && req.method === 'GET') {
-        // A differenza di Express, questo handler gira nudo dentro
-        // http.createServer: un throw qui (viewer.html assente dal pacchetto,
-        // permessi) diventa un'eccezione non gestita che ABBATTE il main
-        // process. Il viewer è un extra: se non si può servire, 500 e via.
-        let html
-        try {
-          html = viewer.viewerHtml()
-        } catch (err) {
-          res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' })
-          return res.end(`Viewer non disponibile: ${err.message}`)
-        }
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        return res.end(html)
+        return sendViewerResponse(res, viewer.pageResponse())
       }
       if (url === '/api/cast/current' && req.method === 'GET') {
-        const cur = visuals.currentForViewer()
-        // Il tablet ripassa di qui in continuazione: con un ETag la risposta
-        // invariata (il caso normale) è un 304 senza corpo. ts cambia ad ogni
-        // visual mostrato, quindi basta lui a identificare lo stato.
-        // Express fa lo stesso da solo sull'altro host.
-        const etag = `W/"${cur ? cur.ts : 'none'}"`
-        const headers = { ETag: etag, 'Access-Control-Allow-Origin': '*' }
-        if (req.headers['if-none-match'] === etag) {
-          res.writeHead(304, headers)
-          return res.end()
-        }
-        res.writeHead(200, { ...headers, 'Content-Type': 'application/json' })
-        return res.end(JSON.stringify(cur))
+        return sendViewerResponse(res, viewer.currentResponse(req.headers['if-none-match']))
       }
       // niente decode qui: ci pensa serveMedia (decodeURIComponent)
       const m = /^\/media\/(.+)/.exec(url)

@@ -183,8 +183,16 @@ app.post('/api/cast/blank', async (req, res) => {
   }
 })
 
-app.get('/api/cast/current', (_req, res) => res.json(visuals.currentForViewer()))
-app.get('/viewer', (_req, res) => res.type('html').send(viewer.viewerHtml()))
+// Corpo, ETag e header li decide viewer.js: qui resta solo il modo di
+// scriverli, che è l'unica cosa che cambia davvero fra Express e l'host Electron.
+function sendViewerResponse(res, { status, headers, body }) {
+  res.status(status).set(headers)
+  return body === null ? res.end() : res.send(body)
+}
+
+app.get('/api/cast/current', (req, res) =>
+  sendViewerResponse(res, viewer.currentResponse(req.headers['if-none-match'])))
+app.get('/viewer', (_req, res) => sendViewerResponse(res, viewer.pageResponse()))
 app.get('/api/cast/viewer-url', (req, res) => {
   try {
     res.json({ url: visuals.viewerUrl(baseUrl(req)) })

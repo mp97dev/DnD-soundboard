@@ -160,9 +160,11 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
   // "configurato", e la rampa successiva ripartiva da un valore parziale.
   let trackVolume = volume
   let outputVolume = volume
-  let el = null
-  let playing = false // true da start() riuscito a stop(): usato per il resume post-devicechange
-  let destroyed = false // stop() già richiesto: non ricostruire più
+  // Tre stati, non due booleani: 'idle' prima di start(), 'playing' da un
+  // start() riuscito (l'unico in cui il resume post-devicechange ha senso),
+  // 'dead' dopo un fine-vita qualsiasi (stop volontario, avvio fallito, budget
+  // di ricostruzioni esaurito) — da lì non si ricostruisce più.
+  let state = 'idle'
   let currentTimeSaved = 0
   let rebuildAttempts = 0
   let stallTimer = null
@@ -170,9 +172,12 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
   let stableTimer = null
   let fadeInterval = null
   let fade = null // { from, target, tau, ms, startedAt, onDone } della rampa in corso
-  // Un AbortController per elemento: staccare i listener è obbligatorio prima
-  // di rilasciarne uno, vedi releaseElement().
-  let elAbort = null
+  // L'elemento e il suo AbortController viaggiano INSIEME: i listener sono
+  // attaccati a quell'elemento e staccarli è obbligatorio prima di rilasciarlo
+  // (vedi releaseElement). Tenuti in due variabili separate andavano passati in
+  // coppia a mano in quattro punti, e bastava dimenticarne uno per rilasciare
+  // un elemento con i listener ancora attivi.
+  let stream = null // { el, abort }
 
   function computeVolume() {
     // output*master può superare 1 (entrambi possono essere >1): l'elemento
@@ -184,7 +189,7 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
   }
 
   function applyVolume() {
-    el.volume = computeVolume()
+    stream.el.volume = computeVolume()
   }
 
   function stopFade() {
@@ -272,13 +277,13 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
   // Stacca i listener e rilascia decoder/stream di un elemento che non serve
   // più. L'ordine NON è negoziabile: removeAttribute('src') + load() fanno
   // emettere 'error' all'elemento, che senza abort rientrerebbe in rebuild().
-  function releaseElement(target, abort) {
+  function releaseElement(target) {
     if (!target) return
-    try { abort?.abort() } catch { /* controller già usato */ }
+    try { target.abort.abort() } catch { /* controller già usato */ }
     try {
-      target.pause()
-      target.removeAttribute('src')
-      target.load()
+      target.el.pause()
+      target.el.removeAttribute('src')
+      target.el.load()
     } catch { /* elemento già morto: ignora */ }
   }
 
@@ -286,8 +291,7 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
   // budget di ricostruzioni esaurito): niente più timer, niente più rebuild,
   // fuori dal registro delle voci vive. NON tocca fadeInterval: vedi stop().
   function releaseVoice() {
-    playing = false
-    destroyed = true
+    state = 'dead'
     clearStallTimer()
     clearTimeout(rebuildTimer)
     clearTimeout(stableTimer)
@@ -306,27 +310,26 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
     e.preload = 'auto'
     e.volume = computeVolume()
     if (startAt > 0) e.currentTime = startAt
-    elAbort = new AbortController()
-    attachListeners(e, elAbort.signal)
-    return e
+    const abort = new AbortController()
+    attachListeners(e, abort.signal)
+    return { el: e, abort }
   }
 
   function rebuild(reason) {
-    if (destroyed) return
+    if (state === 'dead') return
     if (rebuildAttempts >= MAX_REBUILD_ATTEMPTS) {
       logger.error('troppi tentativi di ricostruzione, rinuncio', { path: audioPath, attempts: rebuildAttempts, reason })
       // Rinunciare significa fine-vita: senza questo la voce resterebbe in
       // liveStreamVoices con elemento e listener vivi per tutta la sessione.
-      const dead = el
-      const deadAbort = elAbort
+      const dead = stream
       releaseVoice()
-      releaseElement(dead, deadAbort)
+      releaseElement(dead)
       notifyError({ trackId, path: audioPath, message: `Traccia audio non recuperabile dopo ${rebuildAttempts} tentativi: ${audioPath}` })
       return
     }
     clearTimeout(stableTimer) // guasto nuovo: il conto della stabilità riparte
     // Due eventi ravvicinati (es. 'error' subito dopo 'ended') schedulerebbero
-    // due ricostruzioni: la seconda sovrascriverebbe `el` lasciando l'elemento
+    // due ricostruzioni: la seconda sovrascriverebbe `stream` lasciando l'elemento
     // creato dalla prima orfano, vivo e senza nessuno che lo rilasci.
     clearTimeout(rebuildTimer)
     rebuildAttempts += 1
@@ -337,18 +340,17 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
     // tutte le voci insieme).
     const backoff = reserveRebuildSlot(500 * attempt)
     logger.warn('ricostruzione voce audio', { path: audioPath, attempt, resumeAt, reason, backoffMs: backoff })
-    const old = el
-    const oldAbort = elAbort
+    const old = stream
     rebuildTimer = setTimeout(async () => {
       rebuildTimer = null
-      if (destroyed) return
-      releaseElement(old, oldAbort)
-      el = createElement(resumeAt)
+      if (state === 'dead') return
+      releaseElement(old)
+      stream = createElement(resumeAt)
       try {
-        await el.play()
+        await stream.el.play()
         logger.info('ricostruzione riuscita', { path: audioPath, attempt, resumeAt })
         stableTimer = setTimeout(() => {
-          if (destroyed) return
+          if (state === 'dead') return
           rebuildAttempts = 0
           logger.debug('riproduzione stabile, budget ricostruzioni ripristinato', { path: audioPath })
         }, STABLE_PLAYBACK_MS)
@@ -359,7 +361,7 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
     }, backoff)
   }
 
-  el = createElement(0)
+  stream = createElement(0)
   const voiceApi = {
     setVolume(v) {
       stopFade() // un set esplicito vince su una rampa in corso
@@ -395,8 +397,8 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
     },
     async start() {
       try {
-        await el.play()
-        playing = true
+        await stream.el.play()
+        state = 'playing'
         logger.info('avvio traccia', { path: audioPath, kind, volume: trackVolume })
       } catch (err) {
         logger.error('avvio fallito', { path: audioPath, message: err.message })
@@ -406,7 +408,7 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
         // mancante emette comunque farebbe partire il ciclo di ricostruzione
         // su una traccia già data per persa (5 tentativi, 5 elementi in più).
         releaseVoice()
-        releaseElement(el, elAbort)
+        releaseElement(stream)
         notifyError({ trackId, path: audioPath, message: err.message })
         throw new Error(`Audio non trovato o non riproducibile: ${audioPath}`)
       }
@@ -414,13 +416,14 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
     stop(afterMs = 0) {
       releaseVoice() // uno stop è intenzionale: non farlo ricostruire sotto i piedi
       logger.info('stop traccia', { path: audioPath, kind })
+      const dying = stream
       setTimeout(() => {
         // Il fade in corso va fermato QUI, non all'ingresso di stop():
         // fadeOutAndStop() chiama fadeTo() e subito stop(), quindi azzerare
         // l'intervallo all'ingresso ucciderebbe la rampa prima del primo tick
         // e il fade-out diventerebbe un taglio secco a volume pieno.
         stopFade()
-        releaseElement(el, elAbort)
+        releaseElement(dying)
       }, afterMs + 50)
     },
     applyMaster() {
@@ -429,8 +432,8 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
     // Non fa parte dell'interfaccia Voice "pubblica": serve solo al gestore
     // di devicechange qui sotto per capire se questa voce va rimessa in play.
     resumeIfNeeded() {
-      if (playing && el.paused) {
-        el.play().catch((err) => logger.warn('resume dopo cambio dispositivo fallito', { path: audioPath, message: err.message }))
+      if (state === 'playing' && stream.el.paused) {
+        stream.el.play().catch((err) => logger.warn('resume dopo cambio dispositivo fallito', { path: audioPath, message: err.message }))
       }
     }
   }

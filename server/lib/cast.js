@@ -88,8 +88,12 @@ function lanIp() {
 }
 
 // ---- Sessione di cast ----
-let session = null // { client, player, host, title }
-let sessionStartedAt = null // per calcolare uptimeSec quando la sessione cade
+// startedAt sta DENTRO la sessione: è un suo campo, non uno stato parallelo.
+// Come variabile separata andava scritta e azzerata in lockstep con `session`
+// in ogni percorso — e stop() già se ne dimenticava, lasciando l'orario della
+// sessione precedente a falsare l'uptimeSec della successiva. Che è proprio il
+// numero su cui si regge l'ipotesi Backdrop (docs/session-test-plan.md §5).
+let session = null // { client, player, host, title, startedAt }
 let lastShow = null // ultimi argomenti di show(): servono per la riconnessione
 let reconnect = null // { startedAt, timer, attempts } quando la sessione è caduta
 let watchdog = null
@@ -99,8 +103,11 @@ const WATCHDOG_INTERVAL_MS = 30 * 1000
 // cui la TV può sparire (error/close del client, close del player, watchdog)
 // e per capire se il Default Media Receiver regge le immagini statiche serve
 // sapere, per ognuno, da quanto tempo la sessione era su e cosa mostrava.
+// Chiamata sempre mentre `session` è ancora valorizzata (i quattro rilevatori
+// loggano PRIMA di closeSession): l'uptime è quindi sempre quello della
+// sessione appena persa.
 function logSessionLoss(detector, extra) {
-  const uptimeSec = sessionStartedAt ? Math.round((Date.now() - sessionStartedAt) / 1000) : null
+  const uptimeSec = session ? Math.round((Date.now() - session.startedAt) / 1000) : null
   clog.warn('sessione cast persa', {
     detector,
     uptimeSec,
@@ -127,7 +134,6 @@ function closeSession() {
   if (!session) return
   const s = session
   session = null
-  sessionStartedAt = null
   try { s.client.close() } catch { /* già chiusa */ }
 }
 
@@ -269,78 +275,57 @@ function connect(host) {
   })
 }
 
-// Se la socket muore tra connect e launch/load, i callback castv2 non
-// arrivano mai: ogni passo ha un tetto massimo per non appendere la UI.
-// `step` serve solo a loggare QUALE dei tre passi (launch/load/queueLoad) è
-// scaduto, non cambia né il timeout né l'esito della promise.
-function withTimeout(promise, ms, msg, step) {
-  let t
+// Ogni passo dell'avvio (launch/load/queueLoad) è la stessa cosa tre volte: un
+// callback castv2 che, se la socket muore nel frattempo, non arriva MAI — da
+// cui il tetto massimo, senza il quale la UI resta appesa — più il tempo che
+// ci ha messo, l'unico dato che dice se una TV è lenta o irraggiungibile.
+// `name` distingue nel log quale dei tre è scaduto.
+function step({ name, ms, timeoutMsg, doneMsg }, run) {
+  const startedAt = Date.now()
+  let timer
   let timedOut = false
   const timeout = new Promise((_, reject) => {
-    t = setTimeout(() => {
+    timer = setTimeout(() => {
       timedOut = true
-      reject(new Error(msg))
+      reject(new Error(timeoutMsg))
     }, ms)
   })
-  return Promise.race([promise, timeout]).finally(() => {
-    clearTimeout(t)
-    if (timedOut) clog.warn('timeout in fase di avvio cast', { step, ms })
-  })
+  return Promise.race([new Promise(run), timeout])
+    .then((value) => {
+      clog.info(doneMsg, { elapsedMs: Date.now() - startedAt })
+      return value
+    })
+    .finally(() => {
+      clearTimeout(timer)
+      if (timedOut) clog.warn('timeout in fase di avvio cast', { step: name, ms })
+    })
 }
 
 function launch(client) {
-  const startedAt = Date.now()
-  return withTimeout(
-    new Promise((resolve, reject) => {
-      client.launch(DefaultMediaReceiver, (err, player) =>
-        err ? reject(err) : resolve(player)
-      )
-    }),
-    10000,
-    'La TV non ha avviato il receiver (timeout)',
-    'launch'
-  ).then((player) => {
-    clog.info('receiver avviato', { elapsedMs: Date.now() - startedAt })
-    return player
-  })
+  return step(
+    { name: 'launch', ms: 10000, timeoutMsg: 'La TV non ha avviato il receiver (timeout)', doneMsg: 'receiver avviato' },
+    (resolve, reject) => client.launch(DefaultMediaReceiver, (err, player) => (err ? reject(err) : resolve(player)))
+  )
 }
 
 function loadMedia(player, media) {
-  const startedAt = Date.now()
-  return withTimeout(
-    new Promise((resolve, reject) => {
-      player.load(media, { autoplay: true }, (err, status) =>
-        err ? reject(err) : resolve(status)
-      )
-    }),
-    15000,
-    'La TV non ha caricato il media (timeout)',
-    'load'
-  ).then((status) => {
-    clog.info('media caricato', { elapsedMs: Date.now() - startedAt })
-    return status
-  })
+  return step(
+    { name: 'load', ms: 15000, timeoutMsg: 'La TV non ha caricato il media (timeout)', doneMsg: 'media caricato' },
+    (resolve, reject) => player.load(media, { autoplay: true }, (err, status) => (err ? reject(err) : resolve(status)))
+  )
 }
 
 // Loop nativo del receiver: coda con un solo item e REPEAT_ALL. Nessun gap
 // a fine riproduzione, a differenza del reload manuale su IDLE/FINISHED.
 function loadMediaLooping(player, media) {
-  const startedAt = Date.now()
-  return withTimeout(
-    new Promise((resolve, reject) => {
-      player.queueLoad(
-        [{ media, autoplay: true }],
-        { repeatMode: 'REPEAT_ALL' },
-        (err, status) => (err ? reject(err) : resolve(status))
-      )
-    }),
-    15000,
-    'La TV non ha caricato il media (timeout)',
-    'queueLoad'
-  ).then((status) => {
-    clog.info('media in loop caricato', { elapsedMs: Date.now() - startedAt })
-    return status
-  })
+  return step(
+    { name: 'queueLoad', ms: 15000, timeoutMsg: 'La TV non ha caricato il media (timeout)', doneMsg: 'media in loop caricato' },
+    (resolve, reject) => player.queueLoad(
+      [{ media, autoplay: true }],
+      { repeatMode: 'REPEAT_ALL' },
+      (err, status) => (err ? reject(err) : resolve(status))
+    )
+  )
 }
 
 // Mostra un media sul Chromecast. contentType decide il comportamento:
@@ -404,8 +389,7 @@ async function doShow({ host, url, contentType, title = '', loop = true }) {
     try { client.close() } catch { /* ignora */ }
     throw err
   }
-  session = { client, player, host, title }
-  sessionStartedAt = Date.now()
+  session = { client, player, host, title, startedAt: Date.now() }
   // La TV può chiudere il receiver (torna alla home) lasciando la socket viva:
   // l'evento 'close' dell'application è l'unico segnale
   player.on('close', () => {

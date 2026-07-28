@@ -43,40 +43,39 @@ function togglePreview(t) {
 onBeforeUnmount(stopPreview)
 
 // ---- Editor inline: rinomina + tag ----
-const editingId = ref(null)
-const editTitle = ref('')
-const editTags = ref([])
-const tagInput = ref('')
+// Un editor, uno stato: id, titolo, tag e tag in corso di digitazione nascono e
+// muoiono insieme. Con quattro ref separate le regole di reset erano già
+// divergenti — cancelEdit ne azzerava due su quattro, e salvare passava dal
+// solito azzeramento due volte.
+const edit = ref(null) // { id, title, tags, tagInput } | null
 function startEdit(t) {
-  editingId.value = t.id
-  editTitle.value = t.title
-  editTags.value = t.tags ? [...t.tags] : []
-  tagInput.value = ''
+  edit.value = { id: t.id, title: t.title, tags: t.tags ? [...t.tags] : [], tagInput: '' }
 }
 function cancelEdit() {
-  editingId.value = null
-  tagInput.value = ''
+  edit.value = null
 }
 function addEditTag(raw) {
   const tag = raw.trim().toLowerCase()
-  if (tag && !editTags.value.includes(tag)) editTags.value.push(tag)
+  if (tag && !edit.value.tags.includes(tag)) edit.value.tags.push(tag)
+}
+// Il tag ancora nel campo di testo fa parte dell'editor tanto quanto i chip già
+// creati: si consuma allo stesso modo con Invio, con la virgola e al salvataggio.
+function commitTagInput() {
+  addEditTag(edit.value.tagInput)
+  edit.value.tagInput = ''
 }
 function onTagInputKeydown(e) {
   if (e.key === 'Enter' || e.key === ',') {
     e.preventDefault()
-    addEditTag(tagInput.value)
-    tagInput.value = ''
+    commitTagInput()
   }
 }
 function removeEditTag(tag) {
-  editTags.value = editTags.value.filter((tg) => tg !== tag)
+  edit.value.tags = edit.value.tags.filter((tg) => tg !== tag)
 }
 function saveEdit(t) {
-  if (tagInput.value.trim()) {
-    addEditTag(tagInput.value)
-    tagInput.value = ''
-  }
-  library.updateTrack(t.id, { title: editTitle.value.trim() || t.title, tags: editTags.value })
+  commitTagInput()
+  library.updateTrack(t.id, { title: edit.value.title.trim() || t.title, tags: edit.value.tags })
   cancelEdit()
 }
 
@@ -336,15 +335,15 @@ function onDragStart(e, track) {
                   : 'File locale mancante: reimportalo manualmente'"
               >⚠</span>
             </div>
-            <div v-if="editingId === t.id" class="editor bulk-confirm">
-              <input v-model="editTitle" class="edit-title" placeholder="Titolo" />
+            <div v-if="edit?.id === t.id" class="editor bulk-confirm">
+              <input v-model="edit.title" class="edit-title" placeholder="Titolo" />
               <div class="edit-tags">
-                <span v-for="tag in editTags" :key="tag" class="tag-chip editing">
+                <span v-for="tag in edit.tags" :key="tag" class="tag-chip editing">
                   {{ tag }}
                   <span class="tag-remove" @click="removeEditTag(tag)">×</span>
                 </span>
                 <input
-                  v-model="tagInput"
+                  v-model="edit.tagInput"
                   class="tag-input"
                   list="tag-suggestions"
                   placeholder="+ tag"
