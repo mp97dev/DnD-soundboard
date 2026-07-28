@@ -253,4 +253,10 @@ app.get(/.*/, (_req, res) => serveShell(res))
 server.listen(PORT, HOST, () => {
   console.log(`DnD Soundboard server su http://${HOST}:${PORT}  (dati: ${DATA_DIR})`)
   log.info('app', 'avvio', { port: PORT, node: process.versions.node, platform: process.platform, arch: process.arch })
+  // Stesso battito del main process Electron: in modalità tablet è QUESTO il
+  // processo che scarica, converte e serve i media alla TV.
+  require('./lib/health').startHealthHeartbeat({
+    intervalMs: Number(process.env.SOUNDBOARD_HEALTH_MS) || undefined,
+    host: 'server'
+  })
 })

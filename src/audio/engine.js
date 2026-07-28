@@ -429,6 +429,25 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
     applyMaster() {
       applyVolume()
     },
+    // Fotografia della voce per il battito di salute (src/health.js). In una
+    // sessione lunga la domanda è sempre la stessa: sta ancora suonando DAVVERO?
+    // 'playing' con l'elemento in pausa, o un currentTime che non avanza fra due
+    // battiti, sono i due modi in cui l'audio muore senza dirlo a nessuno.
+    describe() {
+      const { el } = stream
+      return {
+        kind,
+        trackId,
+        path: audioPath,
+        state,
+        paused: el.paused,
+        currentTime: Math.round(el.currentTime),
+        readyState: el.readyState, // <2: non ha abbastanza dati per suonare
+        networkState: el.networkState, // 3: nessuna sorgente utilizzabile
+        volume: Number(el.volume.toFixed(3)),
+        rebuilds: rebuildAttempts
+      }
+    },
     // Non fa parte dell'interfaccia Voice "pubblica": serve solo al gestore
     // di devicechange qui sotto per capire se questa voce va rimessa in play.
     resumeIfNeeded() {
@@ -547,6 +566,17 @@ ctx.onstatechange = () => {
 
 export const engine = {
   resume: () => ctx.resume(),
+
+  // Stato istantaneo del motore, per il battito di salute. Solo lettura: non
+  // tocca né il context né le voci.
+  get health() {
+    return {
+      ctxState: ctx.state,
+      sampleRate: ctx.sampleRate,
+      baseLatency: ctx.baseLatency,
+      voices: [...liveStreamVoices].map((v) => v.describe())
+    }
+  },
 
   setErrorHandler(fn) {
     errorHandler = fn

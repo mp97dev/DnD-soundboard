@@ -6,6 +6,7 @@ import { useSettingsStore } from './stores/settings'
 import { usePlaybackStore } from './stores/playback'
 import PlayMode from './components/PlayMode.vue'
 import EditMode from './components/EditMode.vue'
+import { startHealthHeartbeat } from './health'
 
 const boards = useBoardsStore()
 const library = useLibraryStore()
@@ -46,6 +47,19 @@ onMounted(async () => {
   setTimeout(refreshCastDevices, 4000)
   // Stato cast: mostra la riconnessione automatica quando la TV si perde
   setInterval(() => playback.syncCastStatus(), 5000)
+  // Battito di salute: in una sessione di ore è l'unico modo per accorgersi di
+  // un audio che ha smesso di suonare senza dirlo o di una memoria che cresce.
+  // L'intervallo è pilotabile dall'esterno per i soak test (scripts/soak.js).
+  startHealthHeartbeat({
+    intervalMs: window.api?.env?.healthMs || undefined,
+    extra: () => ({
+      musica: playback.activeMusicId,
+      ambience: playback.activeAmbienceIds.length,
+      cast: playback.castConnected,
+      castRiconnessione: playback.castReconnecting,
+      erroreAudio: playback.audioError
+    })
+  })
   // All'avvio nessuno passa da openBoard: il check dei file mancanti
   // della board iniziale va fatto qui (in background)
   const trackIds =

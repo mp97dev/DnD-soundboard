@@ -354,6 +354,8 @@ server/              LAN server (tablet mode): HTTP + WS over the same renderer
     └── cast.js      Chromecast discovery (mDNS) + control (castv2)
 
 scripts/             yt-dlp/ffmpeg fetch, LXC deploy, screenshots, systemd units
+├── soak.js          Unattended long-run driver (npm run soak)
+└── session-report.js  Turns a session log into a verdict (npm run session-report)
 e2e/                 Playwright tests (Electron)
 ```
 
@@ -363,6 +365,9 @@ Run the end-to-end tests / regenerate the README screenshots:
 npm run test:e2e
 node scripts/screenshots.cjs   # self-contained demo dataset, no downloads
 ```
+
+For long-session debugging (soak runs and log analysis) see
+[docs/session-test-plan.md §9](docs/session-test-plan.md).
 
 ---
 
@@ -477,5 +482,27 @@ One rotating file records startup, environment, playback and cast health:
 ```
 
 It rotates at 2 MB keeping one backup, and a logging failure can never break
-playback. Useful greps and how to read a bad session are documented in
-[docs/session-test-plan.md](docs/session-test-plan.md).
+playback. Both the app and the host process write a heartbeat line every minute
+(voices actually playing, heap, RSS, event-loop delay, cast uptime) — that is
+what makes a four-hour session readable afterwards.
+
+Don't read it by hand:
+
+```bash
+npm run session-report                       # finds the installed log by itself
+npm run session-report -- ~/soundboard.log   # a log copied off the game laptop
+```
+
+It prints every Chromecast drop with its uptime and whether an image or a video
+was on screen, per-track audio stalls and rebuilds, memory and event-loop trends,
+and any gap where the process was stopped. To reproduce a long session without
+playing one — switching tracks, stacking ambience, Stop All, visuals on the TV,
+for as many hours as you like:
+
+```bash
+npm run soak -- --minutes=480             # unattended, your real board
+npm run soak -- --minutes=240 --cast=192.168.1.50
+```
+
+Both tools, and which run answers which question, are documented in
+[docs/session-test-plan.md §9](docs/session-test-plan.md).

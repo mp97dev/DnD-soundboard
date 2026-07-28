@@ -49,5 +49,11 @@ contextBridge.exposeInMainWorld('api', {
   },
   log: {
     write: (entry) => invoke('log:write', entry)
+  },
+  // Solo per la diagnostica: il renderer non può leggere process.env, ma il
+  // battito di salute deve poter battere più in fretta durante un soak test
+  // (scripts/soak.js) senza ricompilare niente.
+  env: {
+    healthMs: Number(process.env.SOUNDBOARD_HEALTH_MS) || null
   }
 })

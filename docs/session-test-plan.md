@@ -164,7 +164,17 @@ Scopes you will see:
 | `env` | distro, audio server (PipeWire vs PulseAudio), default sink, WiFi power-save, LAN IP |
 | `audio` | track start/stop, stalls, errors, rebuilds, device changes, AudioContext state, sample rate, base latency |
 | `cast` | discovery, connect/launch/load timings, **session loss with which detector fired and uptime**, reconnect attempts |
+| `ui:health` | renderer heartbeat, once a minute: heap, AudioContext state, live voices, and whether any voice is *silently* dead |
+| `health` | host heartbeat, once a minute: RSS, heap, event-loop delay, cast session uptime |
 | `ui:*` | anything reported from the renderer |
+| `soak` | actions performed by the unattended soak driver (§9) |
+
+The two heartbeat scopes are what make a long session measurable at all. Nothing
+emits an event when audio quietly stops or memory creeps up over four hours —
+those are only visible by comparing two distant instants, which is exactly what
+a periodic line gives you. The renderer heartbeat downgrades itself to `WARN`
+and prints per-voice detail the moment a voice claims to be playing while its
+element is paused, or its `currentTime` has not moved since the previous beat.
 
 The single most valuable line is the cast session-loss line: it names the
 detector that fired and the session uptime in seconds. Four sessions' worth of
@@ -266,3 +276,75 @@ and driving it from a tablet moves audio output to a single-purpose device with 
 clean Bluetooth stack, sidestepping both the coexistence and the renderer-stall
 problems with no hardware purchase. The `/viewer` page also has no Backdrop
 timeout, making it structurally more reliable than the Default Media Receiver.
+
+---
+
+## 9. Two tools you can run yourself
+
+Both are plain npm scripts. Neither renames nor deletes anything. (One caveat on
+the soak: the app itself re-downloads library files that have gone missing when it
+starts, so launching it against a data directory with missing tracks will restore
+them — that is normal app behaviour, not the soak.)
+
+### `npm run session-report` — read a session log
+
+```bash
+npm run session-report                            # finds the installed log by itself
+npm run session-report -- ~/soundboard.log        # a log copied off the game laptop
+npm run session-report -- ~/soundboard.log --verbose
+```
+
+Reads `soundboard.log` (and the rotated `.1`, so a long session isn't truncated)
+and answers, in one screen, the questions §6 asks you to note by hand:
+
+- **Chromecast** — every session loss with the detector that fired, the uptime,
+  and whether the screen held an image or a video. If only images drop and they
+  drop at similar uptimes, it says so: that is the decision-table row that
+  confirms the Backdrop hypothesis (§7).
+- **Audio** — per track: normal buffering, real stalls, errors, rebuilds, and
+  *give-ups*. A track with a give-up is one that stayed silent until a restart —
+  the worst outcome, and the one probe 1 exists to rule out.
+- **Health over time** — heap, RSS and event-loop delay from start to finish. It
+  flags a renderer heap that more than doubled, and any moment the host event
+  loop stalled long enough to break the audio byte pump.
+- **Recording gaps** — dropped log lines, plus silences longer than three
+  heartbeats. With the heartbeat running, a long silence means the *process* was
+  stopped: suspend, freeze or crash.
+
+Run it after every session, including the ones that felt fine — a clean report is
+the baseline that makes the next bad one readable.
+
+### `npm run soak` — a long session without playing one
+
+```bash
+npm run soak                            # 4 hours on your real data
+npm run soak -- --minutes=30            # short trial run
+npm run soak -- --minutes=480 --switch=120
+npm run soak -- --cast=192.168.1.50     # include the TV in the rotation
+npm run soak -- --data-dir=/path/to/data-copy
+```
+
+Launches the app, opens your board and drives it the way a session does: switches
+music every `--switch` seconds, toggles ambience beds so several voices are live
+at once, presses Stop All every ten cycles, and — with `--cast` — puts a visual on
+the TV every fifth cycle. Every action it takes is written into the same log as
+the app's own events, so the report can tell you the dropout arrived twelve
+seconds after a specific track switch. The heartbeat is sped up (`--health=`,
+seconds) so even a 30-minute run produces a usable trend.
+
+Select the Chromecast from the toolbar before starting: `--cast` tells the soak
+to include visual buttons in the rotation, it does not pick the device for you.
+
+**What to run, and what each run answers:**
+
+| Run | Answers |
+| --- | --- |
+| `npm run soak -- --minutes=480` overnight, no TV | Does audio survive 8 hours unattended? Does the heap grow? This is the cheapest possible version of the four-hour session. |
+| `npm run soak -- --minutes=240 --cast=<ip>` with a **still image** left on screen | Probe 2 without playing a session: does the receiver drop the image at a repeatable uptime? |
+| Same, but a board whose only visual is a **looping video** | Probe 3, the control. Image drops + video survives = Backdrop confirmed. |
+| `npm run soak -- --minutes=60 --switch=20` | Stresses transitions: crossfades, stop-alls and overlapping ambience are where the audio engine works hardest. |
+| Any soak, then turn the Bluetooth speaker **off and on** mid-run | Probe 1, at any hour of the day. The log must show a rebuild and sound returning by itself. |
+
+The soak uses your installed data directory by default (real board, real tracks —
+which matters, since the failures are about long files and real decoding). Pass
+`--data-dir` with a copy if you would rather it never touch the original.

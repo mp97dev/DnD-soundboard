@@ -455,7 +455,11 @@ function status() {
   return {
     casting: !!session,
     title: session?.title ?? null,
-    reconnecting: !!reconnect
+    reconnecting: !!reconnect,
+    // Da quanto regge la sessione corrente: è il numero che dice se la TV cade
+    // a intervalli regolari (ipotesi Backdrop) o a caso. Nel battito di salute
+    // vale quanto il detector nella riga di perdita.
+    uptimeSec: session ? Math.round((Date.now() - session.startedAt) / 1000) : null
   }
 }
 

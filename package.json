@@ -17,6 +17,8 @@
     "build:mac": "npm run fetch:ytdlp && vite build && electron-builder --mac --publish never",
     "build:renderer": "vite build",
     "test:e2e": "vite build && npx playwright test",
+    "soak": "vite build && node scripts/soak.js",
+    "session-report": "node scripts/session-report.js",
     "server": "node server/index.js",
     "start": "node server/index.js"
   },

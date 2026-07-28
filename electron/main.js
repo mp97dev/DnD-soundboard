@@ -78,6 +78,13 @@ app.whenReady().then(() => {
     arch: process.arch,
     hwAccelDisabled
   })
+  // Battito periodico del main process: memoria e ritardo dell'event loop, che
+  // è lo stesso che streama i byte audio al renderer. SOUNDBOARD_HEALTH_MS lo
+  // accorcia per i soak test (scripts/soak.js).
+  require('../server/lib/health').startHealthHeartbeat({
+    intervalMs: Number(process.env.SOUNDBOARD_HEALTH_MS) || undefined,
+    host: 'electron'
+  })
 
   // Con standard:true l'URL media://library/downloaded/x.mp3 viene parsato
   // come host="library" + pathname="/downloaded/x.mp3": li ricomponiamo.
