@@ -2,6 +2,7 @@ const os = require('os')
 const fs = require('fs')
 const path = require('path')
 const { _electron: electron } = require('@playwright/test')
+const { withElectronLibs, preflight } = require('../scripts/electron-libs')
 
 // yt-dlp finto: niente rete, output deterministico con le stesse
 // righe di progresso del vero yt-dlp (--newline)
@@ -53,14 +54,24 @@ async function launchApp({ builtinTracks = null } = {}) {
     fs.writeFileSync(builtinFile, JSON.stringify({ version: 1, tracks: builtinTracks }))
   }
 
+  // Undici test che falliscono con "Process failed to launch!" mandano a
+  // cercare un bug che non c'è: se Electron non può partire lo si dice qui,
+  // con la causa vera. Il controllo va fatto PRIMA del lancio: Playwright non
+  // rifiuta la promise, solleva un'eccezione che non si riesce a catturare.
+  const blocked = preflight()
+  if (blocked) throw new Error(blocked)
+
+  // withElectronLibs: dove mancano le librerie di sistema di Chromium (WSL2,
+  // container) usa quelle estratte da scripts/fetch-electron-libs.sh, così la
+  // suite gira senza dover esportare LD_LIBRARY_PATH a mano ad ogni run.
   const app = await electron.launch({
     args: [path.join(__dirname, '..', 'electron', 'main.js')],
-    env: {
+    env: withElectronLibs({
       ...process.env,
       SOUNDBOARD_DATA_DIR: path.join(tmp, 'data'),
       SOUNDBOARD_BUILTIN_TRACKS: builtinFile,
       YTDLP_PATH: ytdlp
-    }
+    })
   })
   const page = await app.firstWindow()
   return { app, page }

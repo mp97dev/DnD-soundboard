@@ -348,3 +348,20 @@ to include visual buttons in the rotation, it does not pick the device for you.
 The soak uses your installed data directory by default (real board, real tracks —
 which matters, since the failures are about long files and real decoding). Pass
 `--data-dir` with a copy if you would rather it never touch the original.
+
+### If Electron won't start
+
+On minimal Linux installs (WSL2, containers, server images) Electron is missing
+the Chromium system libraries and both the soak and the e2e suite stop before
+doing anything, naming what is missing. Fix it either way:
+
+```bash
+sudo apt-get install -y libnss3 libnspr4 libasound2t64   # the real fix
+npm run fetch:electron-libs                              # no sudo: extracts into .electron-libs/
+```
+
+The second downloads the same packages and unpacks them inside the project;
+`npm run soak` and `npm run test:e2e` pick them up on their own, with no
+`LD_LIBRARY_PATH` to export by hand. This is a *development machine* problem
+only — a packaged `.deb`/AppImage install pulls those libraries in as
+dependencies.

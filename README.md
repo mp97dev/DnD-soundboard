@@ -366,6 +366,17 @@ npm run test:e2e
 node scripts/screenshots.cjs   # self-contained demo dataset, no downloads
 ```
 
+If Electron refuses to start (`Process failed to launch!` — common on WSL2,
+containers and server images), the Chromium system libraries are missing:
+
+```bash
+sudo apt-get install -y libnss3 libnspr4 libasound2t64   # the real fix
+npm run fetch:electron-libs                              # no sudo: extracts into .electron-libs/
+```
+
+The tests and the soak runner detect this and say so before doing anything, and
+they use `.electron-libs/` automatically when it exists.
+
 For long-session debugging (soak runs and log analysis) see
 [docs/session-test-plan.md §9](docs/session-test-plan.md).
 

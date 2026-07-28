@@ -8,3 +8,4 @@ playwright-report/
 *.webm
 *.mp4
 data/logs/
+.electron-libs/

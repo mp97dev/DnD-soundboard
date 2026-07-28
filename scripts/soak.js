@@ -23,6 +23,7 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const { _electron: electron } = require('@playwright/test')
+const { withElectronLibs, preflight } = require('./electron-libs')
 
 // ---- Argomenti ----
 function parseArgs(argv) {
@@ -69,15 +70,25 @@ async function main() {
   console.log(`Referto a fine corsa:  npm run session-report -- "${path.join(dataDir, 'logs', 'soundboard.log')}"`)
   console.log('')
 
+  // Prima di lanciare: un Electron che non può partire lo si sa già da qui, e
+  // il messaggio di Playwright ("Process failed to launch!") non lo direbbe.
+  const blocked = preflight()
+  if (blocked) {
+    console.error(blocked)
+    process.exit(1)
+  }
+
   const app = await electron.launch({
     args: [path.join(__dirname, '..', 'electron', 'main.js')],
-    env: {
+    // withElectronLibs: su installazioni senza le librerie di Chromium
+    // (WSL2, container) usa quelle estratte in .electron-libs/, se ci sono.
+    env: withElectronLibs({
       ...process.env,
       SOUNDBOARD_DATA_DIR: dataDir,
       // Battito più fitto del minuto di default: un soak deve produrre una
       // serie temporale abbastanza densa da mostrare una tendenza.
       SOUNDBOARD_HEALTH_MS: String(args.health * 1000)
-    }
+    })
   })
   const page = await app.firstWindow()
   await page.waitForSelector('.sound-btn', { timeout: 30000 })
