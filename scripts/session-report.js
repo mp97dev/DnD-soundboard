@@ -63,9 +63,12 @@ const num = (v) => (v === undefined || v === '' ? null : Number(v))
 const hhmm = (d) => (Number.isNaN(d?.getTime?.()) ? '??:??:??' : d.toISOString().slice(11, 19))
 const dur = (sec) => {
   if (sec === null || Number.isNaN(sec)) return '?'
-  const h = Math.floor(sec / 3600)
-  const m = Math.floor((sec % 3600) / 60)
-  const s = Math.round(sec % 60)
+  // Arrotondare per ultimo: arrotondando i secondi dopo aver estratto i minuti
+  // usciva "59m60s" invece di "1h00m".
+  const total = Math.round(sec)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
   return h ? `${h}h${String(m).padStart(2, '0')}m` : m ? `${m}m${String(s).padStart(2, '0')}s` : `${s}s`
 }
 function table(rows) {
@@ -138,13 +141,14 @@ function report(entries, { verbose }) {
   // ---- Audio ----
   const byTrack = new Map()
   const bump = (p, key) => {
-    const rec = byTrack.get(p) || { buffering: 0, stalli: 0, errori: 0, ricostruzioni: 0, rinunce: 0 }
+    const rec = byTrack.get(p) || { avvii: 0, buffering: 0, stalli: 0, errori: 0, ricostruzioni: 0, rinunce: 0 }
     rec[key] += 1
     byTrack.set(p, rec)
   }
   for (const e of entries) {
     if (e.scope !== 'audio' && !e.scope.startsWith('ui:audio')) continue
     const p = e.fields.path ?? '?'
+    if (e.msg.startsWith('avvio traccia')) bump(p, 'avvii')
     // Distinzione che conta: 'waiting'/'stalled' all'avvio di una traccia sono
     // bufferizzazione normale; solo lo scadere del timeout è uno stallo vero.
     if (e.msg.startsWith('evento stalled') || e.msg.startsWith('evento waiting')) bump(p, 'buffering')
@@ -162,10 +166,24 @@ function report(entries, { verbose }) {
     const rows = [...byTrack.entries()].sort((a, b) =>
       (b[1].errori + b[1].ricostruzioni) - (a[1].errori + a[1].ricostruzioni))
     out.push(...table([
-      ['traccia', 'buffering', 'stalli', 'errori', 'ricostr.', 'rinunce'],
-      ...rows.map(([p, r]) => [p.split('/').pop().slice(0, 40), r.buffering, r.stalli, r.errori, r.ricostruzioni, r.rinunce])
+      ['traccia', 'avvii', 'buffering', 'stalli', 'errori', 'ricostr.', 'rinunce'],
+      ...rows.map(([p, r]) => [p.split('/').pop().slice(0, 40), r.avvii, r.buffering, r.stalli, r.errori, r.ricostruzioni, r.rinunce])
     ]))
-    out.push('  buffering = attese normali all\'avvio di una traccia; stalli = timeout scaduto, la voce è stata ricostruita')
+    out.push('  buffering = attese; stalli = timeout scaduto, la voce è stata ricostruita')
+    // Un buffering per avvio è la bufferizzazione iniziale, cioè niente. Molti
+    // di più significa che la traccia si ri-bufferizza mentre suona: succede ad
+    // ogni giro di una traccia CORTA in loop (il classico caso di un'ambience
+    // di un minuto), e su un file davvero problematico. La differenza si vede
+    // dalla regolarità: giri sempre alla stessa distanza = confine del loop.
+    const rebuffering = rows.filter(([, r]) => r.avvii > 0 && r.buffering > r.avvii * 2)
+    if (rebuffering.length) {
+      out.push('')
+      for (const [p, r] of rebuffering) {
+        out.push(`  ${p.split('/').pop()}: ${r.buffering} attese in ${r.avvii} riproduzioni (${(r.buffering / r.avvii).toFixed(1)} per volta)`)
+      }
+      out.push('  → si ri-bufferizza mentre suona. Se è una traccia corta in loop è il confine del loop')
+      out.push('    (una attesa per giro, ascolta se si sente un buco); altrimenti è il file o il disco.')
+    }
     const rinunce = rows.filter(([, r]) => r.rinunce)
     if (rinunce.length) out.push('  → una traccia con "rinunce" è rimasta MUTA fino a un riavvio: è il guasto peggiore')
   }
@@ -216,7 +234,12 @@ function report(entries, { verbose }) {
   // La soglia del "buco" dipende da quanto spesso batte il cuore: con battiti
   // ogni minuto tre minuti di silenzio sono un'anomalia, con battiti ogni dieci
   // sarebbero la norma. Senza battiti si resta prudenti (5 minuti).
-  const beatTimes = beatsHost.concat(beatsUi).map((e) => e.at.getTime()).sort((a, b) => a - b)
+  //
+  // La cadenza va misurata su UNA sola sorgente: host e renderer battono quasi
+  // insieme, e mescolarli dava distanze di pochi millisecondi — cioè una
+  // cadenza di "0s" e una soglia senza senso.
+  const beatSource = beatsHost.length >= beatsUi.length ? beatsHost : beatsUi
+  const beatTimes = beatSource.map((e) => e.at.getTime()).sort((a, b) => a - b)
   const beatDeltas = beatTimes.slice(1).map((t, i) => (t - beatTimes[i]) / 1000).filter((d) => d > 0)
   const medianBeat = beatDeltas.length
     ? beatDeltas.sort((a, b) => a - b)[Math.floor(beatDeltas.length / 2)]
@@ -252,9 +275,34 @@ function report(entries, { verbose }) {
   return out
 }
 
+// Il log NON è una sessione: è un file che si accumula fra un avvio e l'altro.
+// Analizzare tutto insieme mescola processi diversi — la memoria "cresce" solo
+// perché il campione salta da un processo all'altro, e il tempo fra due
+// esecuzioni sembra un blocco dell'app. Di default si guarda l'ultima corsa.
+function splitRuns(entries) {
+  const runs = []
+  for (const e of entries) {
+    if (e.scope === 'app' && e.msg === 'avvio') runs.push([])
+    if (!runs.length) runs.push([]) // righe precedenti al primo avvio (log ruotato)
+    runs[runs.length - 1].push(e)
+  }
+  // La diagnostica d'ambiente parte prima della riga di avvio: quelle poche
+  // righe appartengono all'esecuzione che sta per cominciare, non a una corsa
+  // a sé di due righe e zero secondi.
+  return runs.filter((run, i) => {
+    const next = runs[i + 1]
+    if (!next || run.length > 5) return true
+    const orphan = next[0].at - run[0].at < 5000
+    if (orphan) next.unshift(...run)
+    return !orphan
+  })
+}
+
 function main() {
   const args = process.argv.slice(2)
   const verbose = args.includes('--verbose')
+  const all = args.includes('--all')
+  const runArg = args.find((a) => a.startsWith('--run='))
   const explicit = args.find((a) => !a.startsWith('--'))
   const file = explicit || defaultLogCandidates().find((p) => fs.existsSync(p))
   if (!file || !fs.existsSync(file)) {
@@ -276,7 +324,29 @@ function main() {
     process.exit(1)
   }
   console.log(`File: ${file}${parts.length > 1 ? ' (+ .1)' : ''}`)
-  console.log(report(entries, { verbose }).join('\n'))
+
+  const runs = splitRuns(entries)
+  if (all || runs.length === 1) {
+    if (runs.length > 1) console.log(`Esecuzioni nel file: ${runs.length} — analizzate tutte insieme (--all)`)
+    console.log(report(entries, { verbose }).join('\n'))
+    return
+  }
+
+  const index = runArg ? Number(runArg.split('=')[1]) - 1 : runs.length - 1
+  const chosen = runs[index]
+  if (!chosen) {
+    console.error(`Esecuzione ${index + 1} inesistente: il file ne contiene ${runs.length}.`)
+    process.exit(1)
+  }
+  console.log(`Esecuzioni nel file: ${runs.length}`)
+  for (const line of table(runs.map((r, i) => [
+    `${i === index ? '→' : ' '} ${i + 1}`,
+    r[0].ts.slice(0, 19).replace('T', ' '),
+    dur((r[r.length - 1].at - r[0].at) / 1000),
+    `${r.length} righe`
+  ]))) console.log(line)
+  console.log('  (--run=N per un\'altra, --all per tutto il file insieme)')
+  console.log(report(chosen, { verbose }).join('\n'))
 }
 
 if (require.main === module) main()
