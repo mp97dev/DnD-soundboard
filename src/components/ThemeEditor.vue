@@ -30,21 +30,13 @@ watch(open, (v) => {
 })
 onBeforeUnmount(unbind)
 
-const options = [
-  { id: 'candela', label: 'Candela', hint: 'Buio caldo, ottone' },
-  { id: 'notturno', label: 'Notturno', hint: 'Indaco e oro' },
-  { id: 'giorno', label: 'Giorno', hint: 'Chiaro, per preparare' },
-  { id: 'custom', label: 'Personale', hint: 'La tua palette' }
-]
+const options = ['candela', 'notturno', 'giorno', 'custom']
 
-const colorFields = [
-  { key: 'bg', label: 'Sfondo' },
-  { key: 'text', label: 'Testo' },
-  { key: 'accent', label: 'Accento' },
-  { key: 'music', label: 'Musica' },
-  { key: 'ambience', label: 'Ambience' },
-  { key: 'oneshot', label: 'One-shot' },
-  { key: 'visual', label: 'Visual' }
+// Le lingue si scrivono sempre nella propria lingua: "English" tradotto in
+// "Inglese" lo trova solo chi sa già l'italiano, cioè non chi lo sta cercando.
+const languages = [
+  { id: 'it', name: 'Italiano' },
+  { id: 'en', name: 'English' }
 ]
 
 // La palette personale esiste anche prima che si scelga 'Personale': serve ai
@@ -70,59 +62,73 @@ function pick(id) {
   <div class="theme-editor" ref="root">
     <button
       class="theme-btn"
-      title="Tema dell'interfaccia"
-      aria-label="Tema dell'interfaccia"
+      :title="$t('appearance.title')"
+      :aria-label="$t('appearance.title')"
       :aria-expanded="open"
       @click="open = !open"
     >🎨</button>
 
     <div v-if="open" class="panel">
-      <h4>Tema</h4>
+      <h4>{{ $t('appearance.theme') }}</h4>
 
       <div class="grid">
         <button
-          v-for="t in options"
-          :key="t.id"
+          v-for="id in options"
+          :key="id"
           class="card"
-          :class="{ active: settings.theme === t.id }"
-          @click="pick(t.id)"
+          :class="{ active: settings.theme === id }"
+          @click="pick(id)"
         >
-          <span class="swatch" :style="preview(paletteOf(t.id))">
-            <span class="swatch-bar" :style="previewBar(paletteOf(t.id))">
-              <span class="swatch-pill" :style="{ background: paletteOf(t.id).accent }" />
-              <span class="swatch-text" :style="{ color: paletteOf(t.id).text }">Aa</span>
+          <span class="swatch" :style="preview(paletteOf(id))">
+            <span class="swatch-bar" :style="previewBar(paletteOf(id))">
+              <span class="swatch-pill" :style="{ background: paletteOf(id).accent }" />
+              <span class="swatch-text" :style="{ color: paletteOf(id).text }">Aa</span>
             </span>
             <span class="swatch-dots">
               <span
                 v-for="k in ['music', 'ambience', 'oneshot', 'visual']"
                 :key="k"
                 class="dot"
-                :style="{ background: paletteOf(t.id)[k] }"
+                :style="{ background: paletteOf(id)[k] }"
               />
             </span>
           </span>
-          <span class="card-name">{{ t.label }}</span>
-          <span class="card-hint">{{ t.hint }}</span>
+          <span class="card-name">{{ $t(`appearance.themes.${id}.name`) }}</span>
+          <span class="card-hint">{{ $t(`appearance.themes.${id}.hint`) }}</span>
         </button>
       </div>
 
       <div v-if="settings.theme === 'custom'" class="custom">
         <div class="colors">
-          <label v-for="f in colorFields" :key="f.key">
+          <label v-for="key in CUSTOM_KEYS" :key="key">
             <input
               type="color"
-              :value="customPalette[f.key]"
-              @input="settings.previewCustom(f.key, $event.target.value)"
+              :value="customPalette[key]"
+              @input="settings.previewCustom(key, $event.target.value)"
               @change="settings.persistCustom()"
             />
-            <span>{{ f.label }}</span>
+            <span>{{ $t(`appearance.colors.${key}`) }}</span>
           </label>
         </div>
-        <p class="note">
-          Bordi, pannelli e testo secondario si ricavano da sfondo e testo, così
-          restano leggibili qualsiasi coppia si scelga.
-        </p>
-        <button class="reset" @click="settings.resetCustom()">↺ Riparti da Candela</button>
+        <p class="note">{{ $t('appearance.note') }}</p>
+        <button class="reset" @click="settings.resetCustom()">{{ $t('appearance.reset') }}</button>
+      </div>
+
+      <!-- La lingua sta qui e non in un altro bottone: la toolbar è già piena, e
+           tema e lingua sono la stessa cosa — come si presenta l'app, scelto una
+           volta e mai più. Un secondo popover accanto a questo sarebbe solo
+           un'altra icona da indovinare. -->
+      <h4>{{ $t('appearance.language') }}</h4>
+      <div class="langs">
+        <button
+          v-for="l in languages"
+          :key="l.id"
+          class="card lang"
+          :class="{ active: settings.locale === l.id }"
+          :lang="l.id"
+          :aria-pressed="settings.locale === l.id"
+          @click="settings.setLocale(l.id)"
+        >{{ l.name }}</button>
       </div>
     </div>
   </div>
@@ -190,5 +196,7 @@ h4 { margin: 0; font-size: 12px; text-transform: uppercase; color: var(--text-di
   cursor: pointer;
 }
 .note { margin: 0; font-size: 11px; color: var(--text-dim); line-height: 1.4; }
+.langs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.lang { align-items: center; text-align: center; font-weight: 600; }
 .reset { font-size: 12px; padding: 7px 10px; }
 </style>

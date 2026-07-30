@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { engine } from '../audio/engine'
 import { useSettingsStore } from './settings'
+import { t } from '../i18n'
 
 export const usePlaybackStore = defineStore('playback', {
   state: () => ({
@@ -24,10 +25,14 @@ export const usePlaybackStore = defineStore('playback', {
       // count > 1 = più voci cadute a breve distanza: è saltata l'uscita audio,
       // non un file. Nominare una traccia a caso (l'ultima arrivata) sarebbe
       // fuorviante proprio nel caso in cui l'utente ha più bisogno di capire.
-      engine.setErrorHandler(({ path, message, count }) => {
+      // L'engine manda un codice più i suoi parametri: la frase si compone qui,
+      // dove si sa la lingua scelta. Senza questo passaggio la parte tecnica
+      // arriverebbe in italiano dentro una cornice inglese.
+      engine.setErrorHandler(({ path, code, params, count }) => {
+        const detail = code ? t(`playback.engine.${code}`, params ?? {}) : path ?? ''
         this.audioError = count > 1
-          ? `Audio interrotto su ${count} tracce: controlla l'uscita audio (${message})`
-          : `Audio non riproducibile: ${path ?? message}`
+          ? t('playback.audioStopped', { message: detail }, count)
+          : t('playback.audioFailed', { detail })
       })
     },
     // Bottone della board: può avere una traccia audio, un visual da castare,
@@ -56,7 +61,7 @@ export const usePlaybackStore = defineStore('playback', {
         this.activeCastId = res.visualId ?? visual.id
         this.castConnected = !!res.casting
       } catch (e) {
-        this.castError = `Cast fallito: ${e.message}`
+        this.castError = t('playback.castFailed', { error: e.message })
       }
     },
     async stopCast() {

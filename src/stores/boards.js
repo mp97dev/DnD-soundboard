@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { useLibraryStore } from './library'
+import { t } from '../i18n'
 
 let uid = () => Math.random().toString(36).slice(2, 10)
 
@@ -89,7 +90,10 @@ export const useBoardsStore = defineStore('boards', {
       const isVisual = track?.type === 'visual'
       const btn = {
         id: uid(),
-        label: track?.title?.slice(0, 24) ?? 'Nuovo',
+        // L'etichetta è un dato della board da qui in avanti: si traduce nel
+        // momento in cui il bottone nasce e poi resta quella, come un titolo
+        // scritto a mano. Cambiare lingua non riscrive le board già fatte.
+        label: track?.title?.slice(0, 24) ?? t('button.newLabel'),
         trackId: isVisual ? null : track?.id ?? null,
         visualId: isVisual ? track.id : null,
         row: cell.row,

@@ -1,0 +1,170 @@
+{
+  "app": {
+    "newBoard": "+ New board",
+    "boardNamePlaceholder": "Board name",
+    "create": "Create",
+    "cancel": "Cancel",
+    "noBoards": "No boards. Create one to get started.",
+    "castTitle": "Chromecast to show the visuals on",
+    "castNone": "— no cast —",
+    "castManual": "Manual IP…",
+    "castManualPrompt": "Chromecast IP (e.g. 192.168.1.50):",
+    "castDisconnect": "Disconnect the TV",
+    "castClearViewer": "Clear the visual from the viewer",
+    "castReconnecting": "📡 TV lost: reconnecting…",
+    "viewerLink": "Viewer page link: open it on a tablet or another screen to see the visuals",
+    "viewerCopied": "Viewer: {url} — link copied",
+    "viewerUrl": "Viewer: {url}",
+    "viewerUnavailable": "Viewer unavailable: {error}",
+    "exportTitle": "Export boards and settings to a .dnds file (without the mp3s)",
+    "export": "⤓ Export",
+    "importTitle": "Import boards and settings from a .dnds file",
+    "import": "⤒ Import",
+    "exported": "Settings exported",
+    "imported": "{boards}, {tracks}",
+    "importedBoards": "Imported 1 board | Imported {n} boards",
+    "importedTracks": "1 new track | {n} new tracks",
+    "importedWithMissing": "{imported} — {warning}",
+    "importedMissingLocal": "⚠ 1 local file to re-import by hand | ⚠ {n} local files to re-import by hand",
+    "master": "Master",
+    "stopAll": "⏹ Stop All",
+    "play": "▶ Play",
+    "edit": "✎ Edit"
+  },
+  "library": {
+    "title": "Library",
+    "thumbSize": "Thumbnail size",
+    "searchPlaceholder": "Search by name or tag...",
+    "ytPlaceholder": "YouTube URL or playlist",
+    "downloadAudio": "Download audio from YouTube",
+    "downloadAudioTitle": "Download audio from YouTube (one or more lines, playlists too)",
+    "downloadVideo": "Download video from YouTube",
+    "downloadVideoTitle": "Download VIDEO from YouTube (mp4, for casting to the Chromecast)",
+    "expanding": "Reading playlist…",
+    "bulkAsk": "The playlist has {n} video. Download it? | The playlist has {n} videos. Download them all?",
+    "bulkAll": "Download all",
+    "bulkSingle": "Just this video",
+    "cancel": "Cancel",
+    "cancelAll": "✕ Cancel the download | ✕ Cancel all {n} downloads",
+    "jobDismiss": "Dismiss",
+    "jobCancel": "Cancel download",
+    "phase": {
+      "queued": "Queued…",
+      "metadata": "Fetching info…",
+      "audio": "Downloading audio…",
+      "video": "Downloading video…",
+      "convert": "Converting…",
+      "thumbnail": "Downloading cover…"
+    },
+    "importing": "⏳ Importing…",
+    "importAudio": "+ Import local audio",
+    "importVisual": "+ Import image/video",
+    "redownload": "⟳ Download {n} missing file | ⟳ Download {n} missing files",
+    "missingLocal": "⚠ {n} local file missing: no source URL, re-import it by hand | ⚠ {n} local files missing: no source URL, re-import them by hand",
+    "sections": {
+      "music": "Music",
+      "ambience": "Ambience",
+      "oneshot": "One-Shot",
+      "visual": "Visual (cast)"
+    },
+    "empty": "Empty",
+    "trackMissing": "{title} (file missing)",
+    "preview": "Preview",
+    "previewStop": "Stop preview",
+    "renameTags": "Rename / tags",
+    "missingYoutube": "File missing: it will be downloaded again from YouTube",
+    "missingLocalBadge": "Local file missing: re-import it by hand",
+    "titlePlaceholder": "Title",
+    "tagPlaceholder": "+ tag",
+    "save": "Save",
+    "tagSuggestions": [
+      "combat",
+      "exploration",
+      "tension",
+      "rest",
+      "travel",
+      "mystery",
+      "city",
+      "village",
+      "tavern",
+      "castle",
+      "dungeon",
+      "ruins",
+      "forest",
+      "cave",
+      "ocean",
+      "mountain",
+      "swamp",
+      "night",
+      "storm"
+    ]
+  },
+  "properties": {
+    "label": "Label",
+    "track": "Track",
+    "noTrack": "— none —",
+    "visual": "Visual (Chromecast)",
+    "noVisual": "— none —",
+    "type": "Type",
+    "typeMusic": "Music",
+    "typeAmbience": "Ambience",
+    "typeOneshot": "One-Shot",
+    "volume": "Volume {percent}%",
+    "width": "Width",
+    "height": "Height",
+    "remove": "Delete button",
+    "empty": "Pick a button to edit its properties — drag a track from the library to make one. Double-click a button to try it without leaving edit."
+  },
+  "button": {
+    "newLabel": "New",
+    "castSceneImage": "Scene: audio + image on the Chromecast",
+    "castSceneVideo": "Scene: audio + video on the Chromecast",
+    "castImage": "Image on the Chromecast",
+    "castVideo": "Video on the Chromecast",
+    "missingFile": "file missing",
+    "noTrack": "no track"
+  },
+  "appearance": {
+    "title": "Appearance and language",
+    "theme": "Theme",
+    "themes": {
+      "candela": {
+        "name": "Candlelight",
+        "hint": "Warm dark, brass"
+      },
+      "notturno": {
+        "name": "Nocturne",
+        "hint": "Indigo and gold"
+      },
+      "giorno": {
+        "name": "Daylight",
+        "hint": "Bright, for prep"
+      },
+      "custom": {
+        "name": "Custom",
+        "hint": "Your own palette"
+      }
+    },
+    "colors": {
+      "bg": "Background",
+      "text": "Text",
+      "accent": "Accent",
+      "music": "Music",
+      "ambience": "Ambience",
+      "oneshot": "One-shot",
+      "visual": "Visual"
+    },
+    "note": "Borders, panels and secondary text are derived from background and text, so they stay readable whichever pair you pick.",
+    "reset": "↺ Back to Candlelight",
+    "language": "Language"
+  },
+  "playback": {
+    "audioStopped": "Audio stopped on 1 track: check the audio output ({message}) | Audio stopped on {n} tracks: check the audio output ({message})",
+    "audioFailed": "Audio won't play: {detail}",
+    "castFailed": "Cast failed: {error}",
+    "engine": {
+      "rebuildExhausted": "track unrecoverable after {attempts} attempts",
+      "playFailed": "{detail}"
+    }
+  }
+}

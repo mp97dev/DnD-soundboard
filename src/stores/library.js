@@ -10,12 +10,12 @@ const MAX_CONCURRENT = 3
 const uid = () => Math.random().toString(36).slice(2, 10)
 const clone = (v) => JSON.parse(JSON.stringify(v))
 
-// Tag suggeriti per il primo utilizzo; l'autocomplete unisce questi ai tag già usati
-export const TAG_SUGGESTIONS = [
-  'combattimento', 'esplorazione', 'tensione', 'riposo', 'viaggio', 'mistero',
-  'città', 'villaggio', 'taverna', 'castello', 'dungeon', 'rovine',
-  'foresta', 'grotta', 'oceano', 'montagna', 'palude', 'notte', 'tempesta'
-]
+// I tag suggeriti per il primo utilizzo stanno nei cataloghi
+// (library.tagSuggestions): sono testo di interfaccia e cambiano con la lingua.
+// I tag già scritti sulle tracce invece NON si toccano — sono dati dell'utente,
+// e una traccia taggata 'foresta' resta 'foresta' anche in inglese. Qui dentro
+// nessuna azione riscrive t.tags all'infuori di updateTrack, che parte solo
+// dall'editor: cambiare lingua non può muovere niente su disco.
 
 export const useLibraryStore = defineStore('library', {
   state: () => ({

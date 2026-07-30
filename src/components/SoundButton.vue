@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useLibraryStore } from '../stores/library'
 import { usePlaybackStore } from '../stores/playback'
 import { mediaUrl } from '../media'
+import { t } from '../i18n'
 
 const props = defineProps({
   button: { type: Object, required: true },
@@ -59,11 +60,11 @@ const castBadge = computed(() => {
   const icon = visualKind.value === 'image' ? '🖼️' : '🎬'
   return track.value ? `♪${icon}` : icon
 })
+// Quattro frasi intere invece di una con il nome del media incastrato dentro:
+// così ogni lingua sceglie articolo, genere e maiuscola per conto suo.
 const castTitle = computed(() => {
-  const media = visualKind.value === 'image' ? 'immagine' : 'video'
-  return track.value
-    ? `Scena: audio + ${media} sul Chromecast`
-    : `${media[0].toUpperCase()}${media.slice(1)} sul Chromecast`
+  const kind = visualKind.value === 'image' ? 'Image' : 'Video'
+  return t(track.value ? `button.castScene${kind}` : `button.cast${kind}`)
 })
 
 function onClick() {
@@ -88,8 +89,8 @@ function onClick() {
     <span class="type-dot" :class="track?.type ?? (visual ? 'visual' : null)" />
     <span v-if="visual" class="cast-badge" :class="{ casting: isCasting }" :title="castTitle">{{ castBadge }}</span>
     <span class="label">{{ button.label }}</span>
-    <span v-if="track?.missing || visual?.missing" class="warn">file mancante</span>
-    <span v-else-if="!track && !visual" class="warn">nessuna traccia</span>
+    <span v-if="track?.missing || visual?.missing" class="warn">{{ $t('button.missingFile') }}</span>
+    <span v-else-if="!track && !visual" class="warn">{{ $t('button.noTrack') }}</span>
   </button>
 </template>
 

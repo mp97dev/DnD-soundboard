@@ -324,7 +324,11 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
       const dead = stream
       releaseVoice()
       releaseElement(dead)
-      notifyError({ trackId, path: audioPath, message: `Traccia audio non recuperabile dopo ${rebuildAttempts} tentativi: ${audioPath}` })
+      // Un codice, non una frase: l'engine non sa in che lingua è l'interfaccia
+      // e la stringa finirebbe interpolata dentro una tradotta, mezza in
+      // italiano. Il testo per l'utente lo compone lo store; qui sopra il log
+      // resta in italiano perché scripts/session-report.js lo legge.
+      notifyError({ trackId, path: audioPath, code: 'rebuildExhausted', params: { attempts: rebuildAttempts } })
       return
     }
     clearTimeout(stableTimer) // guasto nuovo: il conto della stabilità riparte
@@ -409,7 +413,9 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
         // su una traccia già data per persa (5 tentativi, 5 elementi in più).
         releaseVoice()
         releaseElement(stream)
-        notifyError({ trackId, path: audioPath, message: err.message })
+        // err.message qui viene dal browser (DOMException di <audio>/fetch): non
+        // è traducibile, ma va passato come dettaglio dentro una cornice che sì.
+        notifyError({ trackId, path: audioPath, code: 'playFailed', params: { detail: err.message } })
         throw new Error(`Audio non trovato o non riproducibile: ${audioPath}`)
       }
     },

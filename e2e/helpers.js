@@ -54,6 +54,15 @@ async function launchApp({ builtinTracks = null } = {}) {
     fs.writeFileSync(builtinFile, JSON.stringify({ version: 1, tracks: builtinTracks }))
   }
 
+  // Lingua fissata prima del lancio. Con locale null l'app segue quella del
+  // sistema al primo avvio, e i test cercano bottoni per nome ("Crea",
+  // "Scarica tutti"): su una macchina in inglese fallirebbero tutti senza che
+  // ci sia niente di rotto. Scriverlo qui è anche il modo di provare che il
+  // file su disco vince sulla lingua di sistema.
+  const dataDir = path.join(tmp, 'data')
+  fs.mkdirSync(dataDir, { recursive: true })
+  fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ locale: 'it' }))
+
   // Undici test che falliscono con "Process failed to launch!" mandano a
   // cercare un bug che non c'è: se Electron non può partire lo si dice qui,
   // con la causa vera. Il controllo va fatto PRIMA del lancio: Playwright non

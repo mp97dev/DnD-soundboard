@@ -1,0 +1,170 @@
+{
+  "app": {
+    "newBoard": "+ Nuova board",
+    "boardNamePlaceholder": "Nome board",
+    "create": "Crea",
+    "cancel": "Annulla",
+    "noBoards": "Nessuna board. Creane una per iniziare.",
+    "castTitle": "Chromecast su cui mostrare i visual",
+    "castNone": "— nessun cast —",
+    "castManual": "IP manuale…",
+    "castManualPrompt": "IP del Chromecast (es. 192.168.1.50):",
+    "castDisconnect": "Disconnetti la TV",
+    "castClearViewer": "Togli il visual dal viewer",
+    "castReconnecting": "📡 TV persa: riconnessione automatica…",
+    "viewerLink": "Link della pagina viewer: aprila su tablet/altri schermi per vedere i visual",
+    "viewerCopied": "Viewer: {url} — link copiato",
+    "viewerUrl": "Viewer: {url}",
+    "viewerUnavailable": "Viewer non disponibile: {error}",
+    "exportTitle": "Esporta board e impostazioni in un file .dnds (senza gli mp3)",
+    "export": "⤓ Esporta",
+    "importTitle": "Importa board e impostazioni da un file .dnds",
+    "import": "⤒ Importa",
+    "exported": "Configurazione esportata",
+    "imported": "{boards}, {tracks}",
+    "importedBoards": "Importata 1 board | Importate {n} board",
+    "importedTracks": "1 nuova traccia | {n} nuove tracce",
+    "importedWithMissing": "{imported} — {warning}",
+    "importedMissingLocal": "⚠ 1 file locale da reimportare manualmente | ⚠ {n} file locali da reimportare manualmente",
+    "master": "Master",
+    "stopAll": "⏹ Stop All",
+    "play": "▶ Play",
+    "edit": "✎ Edit"
+  },
+  "library": {
+    "title": "Libreria",
+    "thumbSize": "Dimensione miniature",
+    "searchPlaceholder": "Cerca per nome o tag...",
+    "ytPlaceholder": "URL o playlist YouTube",
+    "downloadAudio": "Scarica audio da YouTube",
+    "downloadAudioTitle": "Scarica audio da YouTube (una o più righe, anche playlist)",
+    "downloadVideo": "Scarica video da YouTube",
+    "downloadVideoTitle": "Scarica VIDEO da YouTube (mp4, per il cast su Chromecast)",
+    "expanding": "Lettura playlist…",
+    "bulkAsk": "La playlist contiene {n} video. Scaricarlo? | La playlist contiene {n} video. Scaricarli tutti?",
+    "bulkAll": "Scarica tutti",
+    "bulkSingle": "Solo questo video",
+    "cancel": "Annulla",
+    "cancelAll": "✕ Annulla il download | ✕ Annulla tutti i download ({n})",
+    "jobDismiss": "Rimuovi",
+    "jobCancel": "Annulla download",
+    "phase": {
+      "queued": "In coda…",
+      "metadata": "Recupero informazioni…",
+      "audio": "Download audio…",
+      "video": "Download video…",
+      "convert": "Conversione…",
+      "thumbnail": "Download copertina…"
+    },
+    "importing": "⏳ Importazione…",
+    "importAudio": "+ Importa audio locale",
+    "importVisual": "+ Importa immagine/video",
+    "redownload": "⟳ Scarica {n} file mancante | ⟳ Scarica {n} file mancanti",
+    "missingLocal": "⚠ {n} file locale mancante: nessun URL sorgente, reimportalo manualmente | ⚠ {n} file locali mancanti: nessun URL sorgente, reimportali manualmente",
+    "sections": {
+      "music": "Musica",
+      "ambience": "Ambience",
+      "oneshot": "One-Shot",
+      "visual": "Visual (cast)"
+    },
+    "empty": "Vuoto",
+    "trackMissing": "{title} (file mancante)",
+    "preview": "Anteprima",
+    "previewStop": "Ferma anteprima",
+    "renameTags": "Rinomina / tag",
+    "missingYoutube": "File mancante: verrà ri-scaricato da YouTube",
+    "missingLocalBadge": "File locale mancante: reimportalo manualmente",
+    "titlePlaceholder": "Titolo",
+    "tagPlaceholder": "+ tag",
+    "save": "Salva",
+    "tagSuggestions": [
+      "combattimento",
+      "esplorazione",
+      "tensione",
+      "riposo",
+      "viaggio",
+      "mistero",
+      "città",
+      "villaggio",
+      "taverna",
+      "castello",
+      "dungeon",
+      "rovine",
+      "foresta",
+      "grotta",
+      "oceano",
+      "montagna",
+      "palude",
+      "notte",
+      "tempesta"
+    ]
+  },
+  "properties": {
+    "label": "Etichetta",
+    "track": "Traccia",
+    "noTrack": "— nessuna —",
+    "visual": "Visual (Chromecast)",
+    "noVisual": "— nessuno —",
+    "type": "Tipo",
+    "typeMusic": "Musica",
+    "typeAmbience": "Ambience",
+    "typeOneshot": "One-Shot",
+    "volume": "Volume {percent}%",
+    "width": "Larghezza",
+    "height": "Altezza",
+    "remove": "Elimina bottone",
+    "empty": "Seleziona un bottone per modificarne le proprietà — trascina una traccia dalla libreria per crearne uno. Doppio click su un bottone per provarlo senza uscire dall'edit."
+  },
+  "button": {
+    "newLabel": "Nuovo",
+    "castSceneImage": "Scena: audio + immagine sul Chromecast",
+    "castSceneVideo": "Scena: audio + video sul Chromecast",
+    "castImage": "Immagine sul Chromecast",
+    "castVideo": "Video sul Chromecast",
+    "missingFile": "file mancante",
+    "noTrack": "nessuna traccia"
+  },
+  "appearance": {
+    "title": "Aspetto e lingua",
+    "theme": "Tema",
+    "themes": {
+      "candela": {
+        "name": "Candela",
+        "hint": "Buio caldo, ottone"
+      },
+      "notturno": {
+        "name": "Notturno",
+        "hint": "Indaco e oro"
+      },
+      "giorno": {
+        "name": "Giorno",
+        "hint": "Chiaro, per preparare"
+      },
+      "custom": {
+        "name": "Personale",
+        "hint": "La tua palette"
+      }
+    },
+    "colors": {
+      "bg": "Sfondo",
+      "text": "Testo",
+      "accent": "Accento",
+      "music": "Musica",
+      "ambience": "Ambience",
+      "oneshot": "One-shot",
+      "visual": "Visual"
+    },
+    "note": "Bordi, pannelli e testo secondario si ricavano da sfondo e testo, così restano leggibili qualsiasi coppia si scelga.",
+    "reset": "↺ Riparti da Candela",
+    "language": "Lingua"
+  },
+  "playback": {
+    "audioStopped": "Audio interrotto su 1 traccia: controlla l'uscita audio ({message}) | Audio interrotto su {n} tracce: controlla l'uscita audio ({message})",
+    "audioFailed": "Audio non riproducibile: {detail}",
+    "castFailed": "Cast fallito: {error}",
+    "engine": {
+      "rebuildExhausted": "traccia non recuperabile dopo {attempts} tentativi",
+      "playFailed": "{detail}"
+    }
+  }
+}

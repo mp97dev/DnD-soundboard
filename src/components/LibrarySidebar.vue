@@ -1,13 +1,18 @@
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
-import { TAG_SUGGESTIONS, useLibraryStore } from '../stores/library'
+import { useLibraryStore } from '../stores/library'
 import { mediaUrl } from '../media'
+import { rt, t, tm } from '../i18n'
 
 const library = useLibraryStore()
 const ytUrl = ref('')
 
-// Tutti i tag noti (usati + suggeriti), per il datalist dell'editor inline
-const knownTags = computed(() => [...new Set([...library.allTags, ...TAG_SUGGESTIONS])])
+// Tutti i tag noti (usati + suggeriti), per il datalist dell'editor inline.
+// I suggeriti seguono la lingua, i tag già scritti sulle tracce no: quelli sono
+// dati dell'utente e vengono letti da library.allTags esattamente come stanno.
+const knownTags = computed(() => [
+  ...new Set([...library.allTags, ...tm('library.tagSuggestions').map(rt)])
+])
 
 // Chip del filtro: i tag presenti in libreria PIÙ quelli ancora attivi che non
 // esistono più su nessuna traccia. Senza questi ultimi, togliere l'ultimo tag
@@ -140,16 +145,12 @@ function visualIcon(t) {
   return IMG_RE.test(t.mediaPath || '') ? '🖼️' : '🎬'
 }
 
-const phaseLabels = {
-  metadata: 'Recupero informazioni…',
-  audio: 'Download audio…',
-  video: 'Download video…',
-  convert: 'Conversione…',
-  thumbnail: 'Download copertina…'
-}
+const PHASES = ['metadata', 'audio', 'video', 'convert', 'thumbnail']
+// Tradotto ad ogni chiamata, non in una tabella a parte: una tabella costruita
+// all'import resterebbe nella lingua di partenza dopo un cambio lingua.
 function jobLabel(job) {
   if (job.status === 'error') return job.error
-  return phaseLabels[job.phase] || 'In coda…'
+  return t(PHASES.includes(job.phase) ? `library.phase.${job.phase}` : 'library.phase.queued')
 }
 // Percentuale solo per le fasi audio/video; le altre sono indeterminate
 function jobPct(job) {
@@ -158,12 +159,7 @@ function jobPct(job) {
     : null
 }
 
-const sections = [
-  { type: 'music', label: 'Musica' },
-  { type: 'ambience', label: 'Ambience' },
-  { type: 'oneshot', label: 'One-Shot' },
-  { type: 'visual', label: 'Visual (cast)' }
-]
+const sections = ['music', 'ambience', 'oneshot', 'visual']
 
 async function addYoutube(asVisual = false) {
   const text = ytUrl.value.trim()
@@ -181,16 +177,16 @@ function onDragStart(e, track) {
 <template>
   <aside class="sidebar" :style="{ width: sidebarWidth + 'px' }">
     <div class="head-row">
-      <h3>Libreria</h3>
+      <h3>{{ $t('library.title') }}</h3>
       <button
         class="icon-btn thumb-zoom"
-        title="Dimensione miniature"
-        aria-label="Dimensione miniature"
+        :title="$t('library.thumbSize')"
+        :aria-label="$t('library.thumbSize')"
         @click="cycleThumbSize"
       >🔍</button>
     </div>
 
-    <input v-model="library.search" placeholder="Cerca per nome o tag..." class="search" />
+    <input v-model="library.search" :placeholder="$t('library.searchPlaceholder')" class="search" />
 
     <div v-if="filterTags.length" class="tag-filters">
       <span
@@ -207,14 +203,14 @@ function onDragStart(e, track) {
         v-model="ytUrl"
         class="yt-input"
         rows="2"
-        placeholder="URL o playlist YouTube"
+        :placeholder="$t('library.ytPlaceholder')"
         @keydown.enter.exact.prevent="addYoutube"
       />
       <div class="import-btns">
         <button
           class="primary icon-btn"
-          title="Scarica audio da YouTube (una o più righe, anche playlist)"
-          aria-label="Scarica audio da YouTube"
+          :title="$t('library.downloadAudioTitle')"
+          :aria-label="$t('library.downloadAudio')"
           @click="addYoutube(false)"
         >
           <svg
@@ -230,24 +226,31 @@ function onDragStart(e, track) {
         </button>
         <button
           class="icon-btn"
-          title="Scarica VIDEO da YouTube (mp4, per il cast su Chromecast)"
-          aria-label="Scarica video da YouTube"
+          :title="$t('library.downloadVideoTitle')"
+          :aria-label="$t('library.downloadVideo')"
           @click="addYoutube(true)"
         >🎬</button>
       </div>
     </div>
-    <p v-if="library.expanding" class="dim">Lettura playlist…</p>
+    <p v-if="library.expanding" class="dim">{{ $t('library.expanding') }}</p>
     <div v-if="library.pendingBulk" class="bulk-confirm">
-      <p class="bulk-msg">
-        La playlist contiene <strong>{{ library.pendingBulk.entries.length }}</strong> video.
-        Scaricarli tutti?
-      </p>
+      <!-- i18n-t invece di $t: il conteggio va in grassetto, e la posizione del
+           numero dentro la frase la decide la lingua, non il template. -->
+      <i18n-t
+        keypath="library.bulkAsk"
+        scope="global"
+        :plural="library.pendingBulk.entries.length"
+        tag="p"
+        class="bulk-msg"
+      >
+        <template #n><strong>{{ library.pendingBulk.entries.length }}</strong></template>
+      </i18n-t>
       <div class="bulk-btns">
-        <button class="primary" @click="library.confirmBulk()">Scarica tutti</button>
+        <button class="primary" @click="library.confirmBulk()">{{ $t('library.bulkAll') }}</button>
         <button v-if="library.pendingBulk.single" @click="library.confirmBulk(true)">
-          Solo questo video
+          {{ $t('library.bulkSingle') }}
         </button>
-        <button @click="library.cancelBulk()">Annulla</button>
+        <button @click="library.cancelBulk()">{{ $t('library.cancel') }}</button>
       </div>
     </div>
     <div v-if="library.jobs.length" class="jobs">
@@ -255,15 +258,15 @@ function onDragStart(e, track) {
         v-if="pendingJobCount > 1"
         class="cancel-all"
         @click="library.cancelAllJobs()"
-      >✕ Annulla tutti i download ({{ pendingJobCount }})</button>
+      >{{ $t('library.cancelAll', pendingJobCount) }}</button>
       <div v-for="job in library.jobs" :key="job.id" class="job" :class="{ failed: job.status === 'error' }">
         <div class="job-row">
           <span class="job-title" :title="job.title">{{ job.title }}</span>
           <span v-if="jobPct(job) !== null" class="job-pct">{{ jobPct(job) }}%</span>
           <button
             class="job-dismiss"
-            :title="job.status === 'error' ? 'Rimuovi' : 'Annulla download'"
-            :aria-label="job.status === 'error' ? 'Rimuovi' : 'Annulla download'"
+            :title="job.status === 'error' ? $t('library.jobDismiss') : $t('library.jobCancel')"
+            :aria-label="job.status === 'error' ? $t('library.jobDismiss') : $t('library.jobCancel')"
             @click="job.status === 'error' ? library.dismissJob(job.id) : library.cancelJob(job.id)"
           >×</button>
         </div>
@@ -277,10 +280,10 @@ function onDragStart(e, track) {
       </div>
     </div>
     <button class="import-local" :disabled="library.importing" @click="library.importLocal()">
-      {{ library.importing ? '⏳ Importazione…' : '+ Importa audio locale' }}
+      {{ library.importing ? $t('library.importing') : $t('library.importAudio') }}
     </button>
     <button class="import-local" :disabled="library.importing" @click="library.importLocalVisual()">
-      {{ library.importing ? '⏳ Importazione…' : '+ Importa immagine/video' }}
+      {{ library.importing ? $t('library.importing') : $t('library.importVisual') }}
     </button>
     <button
       v-if="library.missingDownloadable.length"
@@ -288,24 +291,22 @@ function onDragStart(e, track) {
       :disabled="library.downloading"
       @click="library.redownloadMissing()"
     >
-      ⟳ Scarica {{ library.missingDownloadable.length }} file mancanti
+      {{ $t('library.redownload', library.missingDownloadable.length) }}
     </button>
     <p v-if="library.missingLocal.length" class="local-missing">
-      ⚠ {{ library.missingLocal.length }}
-      {{ library.missingLocal.length === 1 ? 'file locale mancante' : 'file locali mancanti' }}:
-      nessun URL sorgente, reimportali manualmente
+      {{ $t('library.missingLocal', library.missingLocal.length) }}
     </p>
     <p v-if="library.error" class="error">{{ library.error }}</p>
 
     <div class="sections" :style="{ '--thumb': thumbSize + 'px' }">
-      <section v-for="s in sections" :key="s.type">
-        <h4 class="sec-head" @click="toggleSection(s.type)">
-          <span class="chev">{{ collapsed[s.type] ? '▸' : '▾' }}</span>
-          {{ s.label }}
-          <span class="sec-count">{{ library.byType(s.type).length }}</span>
+      <section v-for="s in sections" :key="s">
+        <h4 class="sec-head" @click="toggleSection(s)">
+          <span class="chev">{{ collapsed[s] ? '▸' : '▾' }}</span>
+          {{ $t(`library.sections.${s}`) }}
+          <span class="sec-count">{{ library.byType(s).length }}</span>
         </h4>
-        <template v-if="!collapsed[s.type]">
-          <template v-for="t in library.byType(s.type)" :key="t.id">
+        <template v-if="!collapsed[s]">
+          <template v-for="t in library.byType(s)" :key="t.id">
             <div
               class="track"
               :class="{ missing: t.missing }"
@@ -315,28 +316,31 @@ function onDragStart(e, track) {
               <img v-if="trackThumb(t)" :src="trackThumb(t)" class="mini-thumb" alt="" loading="lazy" />
               <span v-else class="type-dot" :class="t.type" />
               <span v-if="visualIcon(t)" class="visual-kind">{{ visualIcon(t) }}</span>
-              <span class="title" :title="t.missing ? `${t.title} (file mancante)` : t.title">
+              <span
+                class="title"
+                :title="t.missing ? $t('library.trackMissing', { title: t.title }) : t.title"
+              >
                 {{ t.title }}
               </span>
               <span class="row-actions">
                 <button
                   v-if="t.type !== 'visual' && !t.missing"
                   class="row-btn"
-                  :title="previewId === t.id ? 'Ferma anteprima' : 'Anteprima'"
+                  :title="previewId === t.id ? $t('library.previewStop') : $t('library.preview')"
                   @click.stop="togglePreview(t)"
                 >{{ previewId === t.id ? '⏹' : '▶' }}</button>
-                <button class="row-btn" title="Rinomina / tag" @click.stop="startEdit(t)">✏️</button>
+                <button class="row-btn" :title="$t('library.renameTags')" @click.stop="startEdit(t)">✏️</button>
               </span>
               <span
                 v-if="t.missing"
                 class="missing-badge"
                 :title="t.source?.type === 'youtube'
-                  ? 'File mancante: verrà ri-scaricato da YouTube'
-                  : 'File locale mancante: reimportalo manualmente'"
+                  ? $t('library.missingYoutube')
+                  : $t('library.missingLocalBadge')"
               >⚠</span>
             </div>
             <div v-if="edit?.id === t.id" class="editor bulk-confirm">
-              <input v-model="edit.title" class="edit-title" placeholder="Titolo" />
+              <input v-model="edit.title" class="edit-title" :placeholder="$t('library.titlePlaceholder')" />
               <div class="edit-tags">
                 <span v-for="tag in edit.tags" :key="tag" class="tag-chip editing">
                   {{ tag }}
@@ -346,17 +350,17 @@ function onDragStart(e, track) {
                   v-model="edit.tagInput"
                   class="tag-input"
                   list="tag-suggestions"
-                  placeholder="+ tag"
+                  :placeholder="$t('library.tagPlaceholder')"
                   @keydown="onTagInputKeydown"
                 />
               </div>
               <div class="bulk-btns">
-                <button class="primary" @click="saveEdit(t)">Salva</button>
-                <button @click="cancelEdit">Annulla</button>
+                <button class="primary" @click="saveEdit(t)">{{ $t('library.save') }}</button>
+                <button @click="cancelEdit">{{ $t('library.cancel') }}</button>
               </div>
             </div>
           </template>
-          <p v-if="!library.byType(s.type).length" class="dim">Vuoto</p>
+          <p v-if="!library.byType(s).length" class="dim">{{ $t('library.empty') }}</p>
         </template>
       </section>
     </div>

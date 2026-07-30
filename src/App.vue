@@ -8,6 +8,7 @@ import PlayMode from './components/PlayMode.vue'
 import EditMode from './components/EditMode.vue'
 import ThemeEditor from './components/ThemeEditor.vue'
 import { startHealthHeartbeat } from './health'
+import { t } from './i18n'
 
 const boards = useBoardsStore()
 const library = useLibraryStore()
@@ -31,7 +32,7 @@ function selectCastDevice(ev) {
   let name = null
   if (host === '__manual') {
     // Fallback per reti dove la discovery mDNS non funziona
-    host = (prompt('IP del Chromecast (es. 192.168.1.50):') || '').trim() || null
+    host = (prompt(t('app.castManualPrompt')) || '').trim() || null
     name = host
     ev.target.value = settings.castDeviceHost ?? ''
     if (!host) return
@@ -88,17 +89,17 @@ async function copyViewerLink() {
     const url = await window.api.cast.viewerUrl()
     try {
       await navigator.clipboard.writeText(url)
-      flashIoMsg(`Viewer: ${url} — link copiato`)
+      flashIoMsg(t('app.viewerCopied', { url }))
     } catch {
-      flashIoMsg(`Viewer: ${url}`)
+      flashIoMsg(t('app.viewerUrl', { url }))
     }
   } catch (e) {
-    flashIoMsg(`Viewer non disponibile: ${e.message}`)
+    flashIoMsg(t('app.viewerUnavailable', { error: e.message }))
   }
 }
 
 async function exportConfig() {
-  if (await window.api.config.export()) flashIoMsg('Configurazione esportata')
+  if (await window.api.config.export()) flashIoMsg(t('app.exported'))
 }
 
 async function importConfig() {
@@ -109,9 +110,17 @@ async function importConfig() {
     // Scarica in background TUTTI i file mancanti con un URL sorgente,
     // non solo quelli della board corrente
     library.redownloadMissing()
-    let msg = `Importate ${res.boards} board, ${res.addedTracks} nuove tracce`
+    // Due conteggi indipendenti nella stessa frase: ognuno si porta dietro il
+    // proprio plurale (e in italiano il proprio accordo), la frase li unisce.
+    let msg = t('app.imported', {
+      boards: t('app.importedBoards', res.boards),
+      tracks: t('app.importedTracks', res.addedTracks)
+    })
     if (library.missingLocal.length) {
-      msg += ` — ⚠ ${library.missingLocal.length} file locali da reimportare manualmente`
+      msg = t('app.importedWithMissing', {
+        imported: msg,
+        warning: t('app.importedMissingLocal', library.missingLocal.length)
+      })
     }
     flashIoMsg(msg)
   } catch (e) {
@@ -137,49 +146,46 @@ async function importConfig() {
       <template v-if="creating">
         <input
           v-model="newBoardName"
-          placeholder="Nome board"
+          :placeholder="$t('app.boardNamePlaceholder')"
           @keyup.enter="createBoard"
           autofocus
         />
-        <button class="primary" @click="createBoard">Crea</button>
-        <button @click="creating = false">Annulla</button>
+        <button class="primary" @click="createBoard">{{ $t('app.create') }}</button>
+        <button @click="creating = false">{{ $t('app.cancel') }}</button>
       </template>
-      <button v-else @click="creating = true">+ Nuova board</button>
+      <button v-else @click="creating = true">{{ $t('app.newBoard') }}</button>
 
       <div class="spacer" />
 
       <span v-if="ioMsg" class="io-msg">{{ ioMsg }}</span>
       <span v-if="playback.castError" class="io-msg cast-error">{{ playback.castError }}</span>
-      <span v-else-if="playback.castReconnecting" class="io-msg cast-error">📡 TV persa: riconnessione automatica…</span>
+      <span v-else-if="playback.castReconnecting" class="io-msg cast-error">{{ $t('app.castReconnecting') }}</span>
       <span v-if="playback.audioError" class="io-msg cast-error">{{ playback.audioError }}</span>
 
-      <div class="cast" title="Chromecast su cui mostrare i visual">
+      <div class="cast" :title="$t('app.castTitle')">
         <span class="dim">📺</span>
         <select :value="settings.castDeviceHost ?? ''" @focus="refreshCastDevices" @change="selectCastDevice">
-          <option value="">— nessun cast —</option>
+          <option value="">{{ $t('app.castNone') }}</option>
           <option
             v-if="settings.castDeviceHost && !castDevices.some((d) => d.host === settings.castDeviceHost)"
             :value="settings.castDeviceHost"
           >{{ settings.castDeviceName ?? settings.castDeviceHost }}</option>
           <option v-for="d in castDevices" :key="d.host" :value="d.host">{{ d.name }}</option>
-          <option value="__manual">IP manuale…</option>
+          <option value="__manual">{{ $t('app.castManual') }}</option>
         </select>
         <button
           v-if="playback.activeCastId || playback.castConnected || playback.castReconnecting"
-          :title="settings.castDeviceHost ? 'Disconnetti la TV' : 'Togli il visual dal viewer'"
+          :title="settings.castDeviceHost ? $t('app.castDisconnect') : $t('app.castClearViewer')"
           @click="playback.stopCast()"
         >✕</button>
       </div>
-      <button
-        title="Link della pagina viewer: aprila su tablet/altri schermi per vedere i visual"
-        @click="copyViewerLink"
-      >📱</button>
+      <button :title="$t('app.viewerLink')" @click="copyViewerLink">📱</button>
       <ThemeEditor />
-      <button title="Esporta board e impostazioni in un file .dnds (senza gli mp3)" @click="exportConfig">⤓ Esporta</button>
-      <button title="Importa board e impostazioni da un file .dnds" @click="importConfig">⤒ Importa</button>
+      <button :title="$t('app.exportTitle')" @click="exportConfig">{{ $t('app.export') }}</button>
+      <button :title="$t('app.importTitle')" @click="importConfig">{{ $t('app.import') }}</button>
 
       <div class="master">
-        <span class="dim">Master</span>
+        <span class="dim">{{ $t('app.master') }}</span>
         <input
           type="range" min="0" max="1" step="0.01"
           :value="settings.masterVolume"
@@ -187,21 +193,21 @@ async function importConfig() {
         />
       </div>
 
-      <button class="danger" @click="playback.stopAll()">⏹ Stop All</button>
+      <button class="danger" @click="playback.stopAll()">{{ $t('app.stopAll') }}</button>
 
       <div class="mode-switch">
         <button :class="{ active: boards.mode === 'play' }" @click="boards.setMode('play')">
-          ▶ Play
+          {{ $t('app.play') }}
         </button>
         <button :class="{ active: boards.mode === 'edit' }" @click="boards.setMode('edit')">
-          ✎ Edit
+          {{ $t('app.edit') }}
         </button>
       </div>
     </header>
 
     <main class="content">
       <div v-if="!boards.current" class="empty">
-        <p>Nessuna board. Creane una per iniziare.</p>
+        <p>{{ $t('app.noBoards') }}</p>
       </div>
       <PlayMode v-else-if="boards.mode === 'play'" />
       <EditMode v-else />

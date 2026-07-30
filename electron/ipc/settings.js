@@ -15,6 +15,10 @@ const DEFAULTS = {
   // file non può distinguere "primo avvio" da "l'utente ha scelto candela".
   theme: null,
   customTheme: null,
+  // Lingua dell'interfaccia ('it' | 'en'). Stessa regola del tema: null = mai
+  // scelta, così al primo avvio si può seguire la lingua del sistema senza mai
+  // sovrascrivere una scelta fatta apposta.
+  locale: null,
   // Ultima cartella usata nei dialog di import, tenute separate perché audio e
   // visual di solito stanno in posti diversi. Scritte solo dal main process.
   lastImportDirAudio: null,

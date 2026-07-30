@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { engine } from '../audio/engine'
+import { applyLocale, systemLocale } from '../i18n'
 
 // I sette colori che l'utente sceglie per il tema personale: tokens.css ricava
 // da bg e text i quattro token strutturali, quindi qui non si nominano.
@@ -51,7 +52,8 @@ export const useSettingsStore = defineStore('settings', {
     castDeviceHost: null,
     castDeviceName: null,
     theme: null,
-    customTheme: null
+    customTheme: null,
+    locale: null
   }),
   actions: {
     async load() {
@@ -65,15 +67,23 @@ export const useSettingsStore = defineStore('settings', {
       // impostazioni nella data dir) e possono sparire uno senza l'altro. Se a
       // decidere fosse l'assenza del mirror, perderlo cancellerebbe di nascosto
       // un tema scelto apposta — riscrivendoci sopra quello di sistema.
+      let chosenNow = false
       if (!this.theme) {
         this.theme = window.matchMedia('(prefers-color-scheme: light)').matches
           ? 'giorno'
           : 'candela'
-        this.applyTheme()
-        await this.persist()
-      } else {
-        this.applyTheme()
+        chosenNow = true
       }
+      this.applyTheme()
+      // Stessa regola, stesso motivo: lingua null = mai scelta, quindi si segue
+      // il sistema una volta sola e la si scrive subito. Chi ha messo l'app in
+      // italiano su un PC inglese non deve ritrovarsela in inglese al riavvio.
+      if (!this.locale) {
+        this.locale = systemLocale()
+        chosenNow = true
+      }
+      this.locale = applyLocale(this.locale)
+      if (chosenNow) await this.persist()
       engine.setMasterVolume(this.masterVolume)
     },
     // Scrive il tema su <html>: attributo per i tre temi accordati a mano, più
@@ -107,6 +117,10 @@ export const useSettingsStore = defineStore('settings', {
       // così i sette color picker hanno subito un valore da mostrare.
       if (theme === 'custom' && !this.customTheme) this.customTheme = { ...THEME_PALETTES.candela }
       this.applyTheme()
+      await this.persist()
+    },
+    async setLocale(locale) {
+      this.locale = applyLocale(locale)
       await this.persist()
     },
     // Trascinare un color picker deve tingere l'app all'istante: si applica a

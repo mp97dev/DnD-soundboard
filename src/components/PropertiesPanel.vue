@@ -27,37 +27,37 @@ function setVolume(v) {
 <template>
   <footer class="props" v-if="btn">
     <label>
-      Etichetta
+      {{ $t('properties.label') }}
       <input :value="btn.label" @input="update({ label: $event.target.value })" />
     </label>
 
     <label>
-      Traccia
+      {{ $t('properties.track') }}
       <select :value="btn.trackId ?? ''" @change="update({ trackId: $event.target.value || null })">
-        <option value="">— nessuna —</option>
+        <option value="">{{ $t('properties.noTrack') }}</option>
         <option v-for="t in audioTracks" :key="t.id" :value="t.id">{{ t.title }}</option>
       </select>
     </label>
 
     <label>
-      Visual (Chromecast)
+      {{ $t('properties.visual') }}
       <select :value="btn.visualId ?? ''" @change="update({ visualId: $event.target.value || null })">
-        <option value="">— nessuno —</option>
+        <option value="">{{ $t('properties.noVisual') }}</option>
         <option v-for="v in visuals" :key="v.id" :value="v.id">{{ v.title }}</option>
       </select>
     </label>
 
     <label v-if="track">
-      Tipo
+      {{ $t('properties.type') }}
       <select :value="track.type" @change="library.updateTrack(track.id, { type: $event.target.value })">
-        <option value="music">Musica</option>
-        <option value="ambience">Ambience</option>
-        <option value="oneshot">One-Shot</option>
+        <option value="music">{{ $t('properties.typeMusic') }}</option>
+        <option value="ambience">{{ $t('properties.typeAmbience') }}</option>
+        <option value="oneshot">{{ $t('properties.typeOneshot') }}</option>
       </select>
     </label>
 
     <label v-if="track">
-      Volume {{ Math.round(track.volume * 100) }}%
+      {{ $t('properties.volume', { percent: Math.round(track.volume * 100) }) }}
       <input
         type="range" min="0" max="1" step="0.01"
         :value="track.volume"
@@ -66,22 +66,21 @@ function setVolume(v) {
     </label>
 
     <label>
-      Larghezza
+      {{ $t('properties.width') }}
       <input type="number" min="1" :value="btn.colSpan"
         @change="update({ colSpan: Number($event.target.value) })" />
     </label>
 
     <label>
-      Altezza
+      {{ $t('properties.height') }}
       <input type="number" min="1" :value="btn.rowSpan"
         @change="update({ rowSpan: Number($event.target.value) })" />
     </label>
 
-    <button class="danger" @click="boards.removeButton(btn.id)">Elimina bottone</button>
+    <button class="danger" @click="boards.removeButton(btn.id)">{{ $t('properties.remove') }}</button>
   </footer>
   <footer class="props dim-panel" v-else>
-    Seleziona un bottone per modificarne le proprietà — trascina una traccia dalla libreria per crearne uno.
-    Doppio click su un bottone per provarlo senza uscire dall'edit.
+    {{ $t('properties.empty') }}
   </footer>
 </template>
 
