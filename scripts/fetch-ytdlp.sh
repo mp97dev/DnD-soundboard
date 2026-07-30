@@ -3,6 +3,9 @@
 # Usage: fetch-ytdlp.sh [--win]   (--win: scarica anche yt-dlp.exe per il packaging Windows)
 set -euo pipefail
 
+# shellcheck source=lib-fetch.sh
+. "$(dirname "$0")/lib-fetch.sh"
+
 YTDLP_VERSION="${YTDLP_VERSION:-latest}"
 BIN_DIR="$(cd "$(dirname "$0")/.." && pwd)/bin"
 ALSO_WIN=0
@@ -37,7 +40,7 @@ mkdir -p "$BIN_DIR"
 download() {
   local remote="$1" dest="$2" exec="$3"
   echo "==> Downloading $remote -> bin/$(basename "$dest")"
-  curl -fsSL "$BASE_URL/$remote" -o "$dest"
+  fetch_url "$BASE_URL/$remote" "$dest"
   [ "$exec" = "1" ] && chmod +x "$dest"
   echo "    version: $("$dest" --version)"
 }

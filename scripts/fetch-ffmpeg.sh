@@ -4,6 +4,9 @@
 # Usa i build BtbN (GPL). Richiede: curl, unzip (win) / tar+xz (linux).
 set -euo pipefail
 
+# shellcheck source=lib-fetch.sh
+. "$(dirname "$0")/lib-fetch.sh"
+
 BIN_DIR="$(cd "$(dirname "$0")/.." && pwd)/bin"
 
 WIN=0
@@ -27,7 +30,7 @@ if [ "$WIN" = 1 ]; then
   trap 'rm -rf "$TMP"' EXIT
 
   echo "==> Downloading ffmpeg (Windows build) ..."
-  curl -fL "$ZIP_URL" -o "$TMP/ffmpeg.zip"
+  fetch_url "$ZIP_URL" "$TMP/ffmpeg.zip"
 
   echo "==> Extracting ffmpeg.exe and ffprobe.exe ..."
   mkdir -p "$BIN_DIR"
@@ -51,7 +54,7 @@ else
   trap 'rm -rf "$TMP"' EXIT
 
   echo "==> Downloading ffmpeg (Linux static build) ..."
-  curl -fL "$TAR_URL" -o "$TMP/ffmpeg.tar.xz"
+  fetch_url "$TAR_URL" "$TMP/ffmpeg.tar.xz"
 
   echo "==> Extracting ffmpeg and ffprobe ..."
   mkdir -p "$BIN_DIR"
