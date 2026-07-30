@@ -1,14 +1,21 @@
 import { defineStore } from 'pinia'
 import { useLibraryStore } from './library'
+import { findFreeCell, clampToBounds } from '../grid'
 import { t } from '../i18n'
 
 let uid = () => Math.random().toString(36).slice(2, 10)
+
+// Quante modifiche si possono annullare. Abbastanza per rimediare a una serie
+// di gesti sbagliati, non tante da tenere in memoria un'intera sessione.
+const MAX_UNDO = 50
 
 export const useBoardsStore = defineStore('boards', {
   state: () => ({
     boards: [],
     currentBoardId: null,
     selectedButtonId: null,
+    undoStack: [],
+    redoStack: [],
     mode: 'play' // 'play' | 'edit'
   }),
   getters: {
@@ -85,25 +92,55 @@ export const useBoardsStore = defineStore('boards', {
       this.mode = mode
       this.selectedButtonId = null
     },
+    // ---- Annulla / ripeti ----
+    // Uno stack di istantanee dei bottoni della board corrente. Serve da
+    // quando le misure si cambiano trascinando: prima si passava dai due campi
+    // numerici, un gesto lento e difficile da sbagliare per caso; ora basta
+    // partire col dito sulla maniglia sbagliata per rimpicciolire un bottone
+    // che stava bene, e senza un modo di tornare indietro l'unica strada è
+    // ricostruirlo a memoria a metà sessione.
+    //
+    // Si tiene l'istantanea PRIMA della modifica. Il limite esiste perché una
+    // sessione di editing lunga non deve far crescere la memoria all'infinito.
+    _snapshot() {
+      return JSON.stringify(this.current?.buttons ?? [])
+    },
+    pushUndo() {
+      if (!this.current) return
+      this.undoStack.push(this._snapshot())
+      if (this.undoStack.length > MAX_UNDO) this.undoStack.shift()
+      // Un'azione nuova dopo un annulla taglia il futuro: tenere il redo
+      // vorrebbe dire poter ripetere una modifica che parte da uno stato che
+      // non esiste più.
+      this.redoStack = []
+    },
+    async _restore(snapshot) {
+      if (!this.current) return
+      this.current.buttons = JSON.parse(snapshot)
+      if (!this.current.buttons.some((b) => b.id === this.selectedButtonId)) {
+        this.selectedButtonId = null
+      }
+      await this.saveCurrent()
+    },
+    async undo() {
+      const prev = this.undoStack.pop()
+      if (prev === undefined) return false
+      this.redoStack.push(this._snapshot())
+      await this._restore(prev)
+      return true
+    },
+    async redo() {
+      const next = this.redoStack.pop()
+      if (next === undefined) return false
+      this.undoStack.push(this._snapshot())
+      await this._restore(next)
+      return true
+    },
     // ---- Bottoni ----
     findFreeCell(span = { rowSpan: 1, colSpan: 2 }) {
       const b = this.current
       if (!b) return null
-      const occupied = new Set()
-      b.buttons.forEach((btn) => {
-        for (let r = btn.row; r < btn.row + btn.rowSpan; r++)
-          for (let c = btn.col; c < btn.col + btn.colSpan; c++) occupied.add(`${r},${c}`)
-      })
-      for (let r = 1; r <= b.rows - span.rowSpan + 1; r++) {
-        for (let c = 1; c <= b.cols - span.colSpan + 1; c++) {
-          let free = true
-          for (let rr = r; rr < r + span.rowSpan && free; rr++)
-            for (let cc = c; cc < c + span.colSpan && free; cc++)
-              if (occupied.has(`${rr},${cc}`)) free = false
-          if (free) return { row: r, col: c }
-        }
-      }
-      return null
+      return findFreeCell(b.buttons, b.cols, b.rows, span.rowSpan, span.colSpan)
     },
     async addButton(track, pos = null) {
       if (!this.current) return
@@ -112,6 +149,7 @@ export const useBoardsStore = defineStore('boards', {
       if (!cell) return
       // Un visual trascinato sulla griglia diventa un bottone di cast;
       // assegnando poi anche una traccia si ottiene una scena (audio + TV)
+      this.pushUndo()
       const isVisual = track?.type === 'visual'
       const btn = {
         id: uid(),
@@ -133,17 +171,18 @@ export const useBoardsStore = defineStore('boards', {
     async updateButton(id, patch) {
       const btn = this.current?.buttons.find((b) => b.id === id)
       if (!btn) return
+      this.pushUndo()
       Object.assign(btn, patch)
-      // Clamp dentro la griglia
-      const b = this.current
-      btn.row = Math.max(1, Math.min(btn.row, b.rows - btn.rowSpan + 1))
-      btn.col = Math.max(1, Math.min(btn.col, b.cols - btn.colSpan + 1))
-      btn.rowSpan = Math.max(1, Math.min(btn.rowSpan, b.rows - btn.row + 1))
-      btn.colSpan = Math.max(1, Math.min(btn.colSpan, b.cols - btn.col + 1))
+      // Clamp dentro i bordi. La collisione fra bottoni NON si controlla qui:
+      // il chiamante ha già deciso (il trascinamento rifiuta il rilascio su
+      // celle occupate), e un clamp silenzioso a sorpresa sarebbe peggio del
+      // rifiuto esplicito.
+      Object.assign(btn, clampToBounds(btn, this.current.cols, this.current.rows))
       await this.saveCurrent()
     },
     async removeButton(id) {
       if (!this.current) return
+      this.pushUndo()
       this.current.buttons = this.current.buttons.filter((b) => b.id !== id)
       if (this.selectedButtonId === id) this.selectedButtonId = null
       await this.saveCurrent()

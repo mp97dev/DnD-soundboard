@@ -112,11 +112,10 @@ test('trascinamento: una cartella dentro un\'altra la riparenta', async () => {
   await app.close()
 })
 
-// Rosso finché la fase 7 non aggiunge il controllo di collisione: oggi un drop
-// sopra un bottone esistente ne impila due sulle stesse celle. Marcato fail
-// apposta, così diventerà un promemoria quando inizierà a passare invece di
-// restare un test dimenticato.
-test.fail('trascinamento: un drop su una cella occupata non deve sovrapporre', async () => {
+// Era un test.fail: prima della riscrittura un drop sopra un bottone
+// esistente ne impilava due sulle stesse celle. Ora la cella occupata viene
+// scansata verso la libera più vicina, e questo è il test che lo tiene fermo.
+test('trascinamento: un drop su una cella occupata non deve sovrapporre', async () => {
   const { app, page, readBoards } = await launchApp({ library: LIBRARY })
   await page.getByRole('button', { name: /Nuova board/ }).click()
   await page.getByPlaceholder('Nome board').fill('Test')
@@ -133,6 +132,100 @@ test.fail('trascinamento: un drop su una cella occupata non deve sovrapporre', a
   await expect.poll(() => readBoards()[0].buttons.length).toBe(2)
 
   expect(overlappingCells(readBoards()[0].buttons)).toBe(0)
+
+  await app.close()
+})
+
+// ---- Ridimensionamento a trascinamento (nuovo nella fase 7) ----
+// Prima la misura si cambiava solo dai due campi numerici, che agiscono su
+// rowSpan/colSpan tenendo fermo l'angolo in alto a sinistra: un bottone poteva
+// crescere solo verso destra e verso il basso. Questi test guardano proprio
+// quello che prima era impossibile.
+
+async function makeButton(page, readBoards) {
+  await page.getByRole('button', { name: /Nuova board/ }).click()
+  await page.getByPlaceholder('Nome board').fill('Test')
+  await page.getByRole('button', { name: 'Crea' }).click()
+  await openEdit(page)
+  await page.locator('.sidebar .track', { hasText: 'Marcia' }).first()
+    .dragTo(page.locator('.edit-grid'))
+  await expect.poll(() => readBoards()[0].buttons.length).toBe(1)
+  // selezionato: le maniglie compaiono solo sul bottone selezionato
+  await page.locator('.btn-wrapper').first().click({ position: { x: 5, y: 5 } })
+  await expect(page.locator('.handle')).toHaveCount(8)
+  return readBoards()[0].buttons[0]
+}
+
+// Trascina una maniglia di (dx, dy) pixel con veri eventi di puntatore.
+async function dragHandle(page, handle, dx, dy) {
+  const h = page.locator(`.handle.h-${handle}`)
+  const box = await h.boundingBox()
+  const x = box.x + box.width / 2
+  const y = box.y + box.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + dx, y + dy, { steps: 8 })
+  await page.mouse.up()
+}
+
+test('ridimensionamento: la maniglia ovest fa crescere il bottone verso SINISTRA', async () => {
+  const { app, page, readBoards } = await launchApp({ library: LIBRARY })
+  const before = await makeButton(page, readBoards)
+  const grid = await page.locator('.edit-grid').boundingBox()
+  const cellW = grid.width / 12 // board di default: 12 colonne
+
+  await dragHandle(page, 'w', -cellW * 2, 0)
+
+  await expect.poll(() => readBoards()[0].buttons[0].col).toBeLessThan(before.col)
+  const after = readBoards()[0].buttons[0]
+  // il bordo DESTRO non si è mosso: è cresciuto a sinistra, non traslato
+  expect(after.col + after.colSpan).toBe(before.col + before.colSpan)
+  expect(after.colSpan).toBeGreaterThan(before.colSpan)
+
+  await app.close()
+})
+
+test('ridimensionamento: la maniglia nord fa crescere il bottone verso l\'ALTO', async () => {
+  const { app, page, readBoards } = await launchApp({ library: LIBRARY })
+  const before = await makeButton(page, readBoards)
+  const grid = await page.locator('.edit-grid').boundingBox()
+  const cellH = grid.height / 8 // board di default: 8 righe
+
+  await dragHandle(page, 'n', 0, -cellH * 2)
+
+  await expect.poll(() => readBoards()[0].buttons[0].row).toBeLessThan(before.row)
+  const after = readBoards()[0].buttons[0]
+  expect(after.row + after.rowSpan).toBe(before.row + before.rowSpan)
+
+  await app.close()
+})
+
+test('annulla: Ctrl+Z rimette il bottone come stava', async () => {
+  const { app, page, readBoards } = await launchApp({ library: LIBRARY })
+  const before = await makeButton(page, readBoards)
+  const grid = await page.locator('.edit-grid').boundingBox()
+
+  await dragHandle(page, 'e', (grid.width / 12) * 2, 0)
+  await expect.poll(() => readBoards()[0].buttons[0].colSpan).toBeGreaterThan(before.colSpan)
+
+  await page.keyboard.press('Control+z')
+  await expect.poll(() => readBoards()[0].buttons[0].colSpan).toBe(before.colSpan)
+
+  // e si può rifare
+  await page.keyboard.press('Control+Shift+z')
+  await expect.poll(() => readBoards()[0].buttons[0].colSpan).toBeGreaterThan(before.colSpan)
+
+  await app.close()
+})
+
+test('tastiera: le frecce spostano il bottone selezionato', async () => {
+  const { app, page, readBoards } = await launchApp({ library: LIBRARY })
+  const before = await makeButton(page, readBoards)
+
+  await page.keyboard.press('ArrowDown')
+  await expect.poll(() => readBoards()[0].buttons[0].row).toBe(before.row + 1)
+  await page.keyboard.press('ArrowRight')
+  await expect.poll(() => readBoards()[0].buttons[0].col).toBe(before.col + 1)
 
   await app.close()
 })
