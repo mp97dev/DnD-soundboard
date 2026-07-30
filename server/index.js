@@ -193,6 +193,7 @@ function sendViewerResponse(res, { status, headers, body }) {
 app.get('/api/cast/current', (req, res) =>
   sendViewerResponse(res, viewer.currentResponse(req.headers['if-none-match'])))
 app.get('/viewer', (_req, res) => sendViewerResponse(res, viewer.pageResponse()))
+app.get('/viewer.webmanifest', (_req, res) => sendViewerResponse(res, viewer.manifestResponse()))
 app.get('/api/cast/viewer-url', (req, res) => {
   try {
     res.json({ url: visuals.viewerUrl(baseUrl(req)) })

@@ -55,6 +55,9 @@ function ensureMediaServer() {
       if (url === '/viewer' && req.method === 'GET') {
         return sendViewerResponse(res, viewer.pageResponse())
       }
+      if (url === '/viewer.webmanifest' && req.method === 'GET') {
+        return sendViewerResponse(res, viewer.manifestResponse())
+      }
       if (url === '/api/cast/current' && req.method === 'GET') {
         return sendViewerResponse(res, viewer.currentResponse(req.headers['if-none-match']))
       }

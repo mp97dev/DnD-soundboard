@@ -2,8 +2,14 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Soundboard Viewer</title>
+<link rel="manifest" href="/viewer.webmanifest">
+<!-- iOS non legge display:fullscreen dal manifest: da lì la pagina aggiunta
+     alla Home parte senza barre solo con questi due meta. -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
   html, body {
     margin: 0; padding: 0; width: 100%; height: 100%;
@@ -27,11 +33,30 @@
     transition: opacity 1.5s ease;
   }
   #caption.hidden { opacity: 0; }
+  #hint {
+    position: fixed; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    padding: 14px 22px;
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 10px;
+    color: rgba(255,255,255,0.55);
+    font: 15px/1.5 system-ui, sans-serif;
+    text-align: center;
+    transition: opacity 0.6s ease;
+    pointer-events: none;
+  }
+  #hint.hidden { opacity: 0; }
+  /* Lanciata dall'icona in Home il suggerimento non serve: lì non ci sono
+     barre da togliere. */
+  @media (display-mode: fullscreen), (display-mode: standalone) {
+    #hint { display: none; }
+  }
 </style>
 </head>
 <body>
 <div id="stage"></div>
 <div id="caption">In attesa di un visual…</div>
+<div id="hint">Tocca lo schermo per andare a tutto schermo</div>
 <script>
 (function () {
   var stage = document.getElementById('stage')
@@ -128,6 +153,74 @@
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) { delay = POLL_MS; schedule(0) }
   })
+
+  // ---- Tutto schermo ----
+  // A tutto schermo da solo, al caricamento, NON si può: requestFullscreen()
+  // pretende un gesto dell'utente e senza viene rifiutata da ogni browser.
+  // Quindi due strade, in ordine di comodità:
+  //  1. la pagina aggiunta alla schermata Home parte già senza barre, per via
+  //     del manifest (display:fullscreen) e dei meta apple qui sopra: è
+  //     l'unica cosa che si comporta davvero come "automatica";
+  //  2. chi apre il link e basta tocca una volta lo schermo.
+  var hint = document.getElementById('hint')
+
+  function isFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement)
+  }
+  // Lanciata dall'icona: niente barre da togliere, il suggerimento sparisce.
+  function launchedStandalone() {
+    return (
+      (window.matchMedia && (
+        window.matchMedia('(display-mode: fullscreen)').matches ||
+        window.matchMedia('(display-mode: standalone)').matches
+      )) || window.navigator.standalone === true
+    )
+  }
+
+  function goFullscreen() {
+    if (isFullscreen()) return
+    var el = document.documentElement
+    var req = el.requestFullscreen || el.webkitRequestFullscreen
+    if (!req) return // iOS in Safari non lo espone: resta la via della Home
+    try {
+      var r = req.call(el, { navigationUI: 'hide' })
+      if (r && r.catch) r.catch(function () {})
+    } catch (e) { /* rifiutata: la pagina resta usabile lo stesso */ }
+  }
+
+  function hideHint() {
+    if (!hint) return
+    hint.classList.add('hidden')
+  }
+
+  if (launchedStandalone()) hideHint()
+
+  // Un tocco qualsiasi vale come gesto. pointerup e non click: sul tablet
+  // arriva prima e non aspetta il doppio-tap.
+  document.addEventListener('pointerup', function () {
+    goFullscreen()
+    hideHint()
+    requestWakeLock()
+  })
+
+  // ---- Schermo sempre acceso ----
+  // Un tablet che mostra i visual per una sessione intera si spegne da solo
+  // dopo un minuto: il visual c'è, il polling gira, ma lo schermo è nero e
+  // sembra che il viewer si sia piantato. Il blocco cade da solo quando la
+  // scheda va in background, quindi va richiesto di nuovo al risveglio.
+  var wakeLock = null
+  function requestWakeLock() {
+    if (!navigator.wakeLock || wakeLock) return
+    navigator.wakeLock.request('screen').then(function (l) {
+      wakeLock = l
+      l.addEventListener('release', function () { wakeLock = null })
+    }).catch(function () { /* negato o non supportato: pazienza */ })
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) requestWakeLock()
+  })
+  requestWakeLock()
 
   showCaption()
   poll()

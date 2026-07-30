@@ -34,6 +34,31 @@ function pageResponse() {
   }
 }
 
+// Manifest per "aggiungi a schermata Home". È l'unico modo di avere il viewer
+// davvero a tutto schermo senza toccare niente: requestFullscreen() esige un
+// gesto dell'utente e a caricamento pagina viene sempre rifiutato, mentre una
+// pagina lanciata dall'icona con display:fullscreen parte senza barre e senza
+// che nessuno prema niente. Il tocco sulla pagina resta come ripiego per chi
+// apre il link e basta.
+//
+// start_url punta a /viewer: l'icona deve aprire il visual, non la soundboard.
+function manifestResponse() {
+  return {
+    status: 200,
+    headers: { 'Content-Type': 'application/manifest+json; charset=utf-8' },
+    body: JSON.stringify({
+      name: 'Soundboard Viewer',
+      short_name: 'Viewer',
+      start_url: '/viewer',
+      scope: '/viewer',
+      display: 'fullscreen',
+      orientation: 'landscape',
+      background_color: '#000000',
+      theme_color: '#000000'
+    })
+  }
+}
+
 // Il tablet ripassa di qui in continuazione: con un ETag la risposta invariata
 // (il caso normale, per ore) è un 304 senza corpo. ts cambia ad ogni visual
 // mostrato, quindi basta lui a identificare lo stato.
@@ -53,4 +78,4 @@ function currentResponse(ifNoneMatch) {
 
 // Fuori escono solo le risposte: l'HTML da solo non serve a nessuno degli host
 // e riesportarlo rimetterebbe in circolo la variante che può lanciare.
-module.exports = { pageResponse, currentResponse }
+module.exports = { pageResponse, currentResponse, manifestResponse }
