@@ -1,11 +1,18 @@
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import { useLibraryStore, UNFILED } from '../stores/library'
-import { mediaUrl } from '../media'
+import { trackThumb, visualIcon } from '../media'
+import { previewId, stopPreview, togglePreview } from '../preview'
 import { rt, t, tm } from '../i18n'
+import LibraryDialog from './LibraryDialog.vue'
 
 const library = useLibraryStore()
 const ytUrl = ref('')
+
+// La libreria a tutta finestra. Il bottone sta qui e non nella toolbar: la
+// toolbar a 1280px va già a capo su due righe, e questo comando appartiene
+// comunque alla libreria.
+const dialog = ref(null)
 
 // Tutti i tag noti (usati + suggeriti), per il datalist dell'editor inline.
 // I suggeriti seguono la lingua, i tag già scritti sulle tracce no: quelli sono
@@ -13,14 +20,6 @@ const ytUrl = ref('')
 const knownTags = computed(() => [
   ...new Set([...library.allTags, ...tm('library.tagSuggestions').map(rt)])
 ])
-
-// Chip del filtro: i tag presenti in libreria PIÙ quelli ancora attivi che non
-// esistono più su nessuna traccia. Senza questi ultimi, togliere l'ultimo tag
-// "castello" mentre il filtro su "castello" è attivo farebbe sparire il chip
-// ma non il filtro: libreria vuota e nessun modo visibile per sbloccarla.
-const filterTags = computed(() =>
-  [...new Set([...library.allTags, ...library.tagFilter])].sort((a, b) => a.localeCompare(b))
-)
 
 // ---- Albero delle cartelle ----
 // Disegnato come lista piatta con rientro invece che con un componente
@@ -36,22 +35,22 @@ function toggleFolder(id) {
   localStorage[LS_COLLAPSED] = JSON.stringify([...collapsedFolders])
 }
 
-// respectCollapse=false serve alla tendina "aggiungi a cartella" dell'editor,
-// che deve elencare tutte le cartelle anche se il ramo è chiuso nell'albero.
-function flattenFolders(respectCollapse) {
+// L'albero con i rami richiusi. La versione tutta aperta, che serve alla
+// tendina "aggiungi a cartella" e al dialogo, è library.flatFolders: i rami
+// chiusi sono stato di QUESTA vista e non riguardano chi elenca le cartelle.
+function flattenFolders() {
   const rows = []
   const walk = (parentId, depth) => {
     for (const f of library.childFolders(parentId)) {
       const children = library.childFolders(f.id)
       rows.push({ folder: f, depth, hasChildren: children.length > 0 })
-      if (!respectCollapse || !collapsedFolders.has(f.id)) walk(f.id, depth + 1)
+      if (!collapsedFolders.has(f.id)) walk(f.id, depth + 1)
     }
   }
   walk(null, 0)
   return rows
 }
-const folderRows = computed(() => flattenFolders(true))
-const allFolderRows = computed(() => flattenFolders(false))
+const folderRows = computed(() => flattenFolders())
 
 // Colore di partenza del selettore per una cartella che non ne ha ancora uno.
 // Il colore scelto è un DATO salvato in index.json e applicato con :style, ma
@@ -140,29 +139,11 @@ function onFolderDragStart(e, f) {
   e.dataTransfer.effectAllowed = 'move'
 }
 
-// ---- Anteprima audio: un solo elemento condiviso, un solo player attivo ----
-const previewId = ref(null)
-let previewEl = null
-function stopPreview() {
-  if (previewEl) {
-    previewEl.pause()
-    previewEl.removeAttribute('src')
-    previewEl.load()
-    previewEl = null
-  }
-  previewId.value = null
-}
-function togglePreview(t) {
-  if (previewId.value === t.id) return stopPreview()
-  stopPreview()
-  const el = new Audio(mediaUrl(t.audioPath))
-  el.volume = t.volume ?? 1
-  const stopIfCurrent = () => { if (previewEl === el) stopPreview() }
-  el.onended = stopIfCurrent
-  el.play().catch(stopIfCurrent)
-  previewEl = el
-  previewId.value = t.id
-}
+// ---- Anteprima audio ----
+// L'elemento <audio> sta in ../preview ed è uno solo per tutta l'app: la
+// sidebar e il dialogo mostrano le stesse tracce insieme, e due anteprime
+// sovrapposte in cuffia a metà sessione erano il modo più rapido di non capire
+// più cosa si sta ascoltando.
 onBeforeUnmount(stopPreview)
 
 // ---- Editor inline: rinomina + tag ----
@@ -270,19 +251,6 @@ const pendingJobCount = computed(
 const collapsed = reactive({})
 const toggleSection = (type) => (collapsed[type] = !collapsed[type])
 
-// Mini-preview: thumbnail YouTube, o l'immagine stessa per i visual locali
-const IMG_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
-function trackThumb(t) {
-  if (t.thumbnailPath) return mediaUrl(t.thumbnailPath)
-  if (t.mediaPath && IMG_RE.test(t.mediaPath)) return mediaUrl(t.mediaPath)
-  return null
-}
-// 🎬 video / 🖼️ immagine per distinguere i visual nella lista
-function visualIcon(t) {
-  if (t.type !== 'visual') return null
-  return IMG_RE.test(t.mediaPath || '') ? '🖼️' : '🎬'
-}
-
 const PHASES = ['metadata', 'audio', 'video', 'convert', 'thumbnail']
 // Tradotto ad ogni chiamata, non in una tabella a parte: una tabella costruita
 // all'import resterebbe nella lingua di partenza dopo un cambio lingua.
@@ -318,11 +286,19 @@ function onDragStart(e, track) {
       <h3>{{ $t('library.title') }}</h3>
       <button
         class="icon-btn thumb-zoom"
+        :title="$t('library.dialog.openTitle')"
+        :aria-label="$t('library.dialog.open')"
+        @click="dialog.open()"
+      >⛶</button>
+      <button
+        class="icon-btn thumb-zoom"
         :title="$t('library.thumbSize')"
         :aria-label="$t('library.thumbSize')"
         @click="cycleThumbSize"
       >🔍</button>
     </div>
+
+    <LibraryDialog ref="dialog" />
 
     <input v-model="library.search" :placeholder="$t('library.searchPlaceholder')" class="search" />
 
@@ -440,7 +416,7 @@ function onDragStart(e, track) {
       <p v-if="folderMsg" class="error">{{ folderMsg }}</p>
     </div>
 
-    <div v-if="filterTags.length" class="tag-mode" :title="$t('library.tagMatch.hint')">
+    <div v-if="library.filterTags.length" class="tag-mode" :title="$t('library.tagMatch.hint')">
       <span class="dim">{{ $t('library.tagMatch.label') }}</span>
       <button
         class="mode-btn"
@@ -453,9 +429,9 @@ function onDragStart(e, track) {
         @click="library.setTagMatchMode('any')"
       >{{ $t('library.tagMatch.any') }}</button>
     </div>
-    <div v-if="filterTags.length" class="tag-filters">
+    <div v-if="library.filterTags.length" class="tag-filters">
       <span
-        v-for="tag in filterTags"
+        v-for="tag in library.filterTags"
         :key="tag"
         class="tag-chip"
         :class="{ active: library.tagFilter.includes(tag) }"
@@ -634,7 +610,7 @@ function onDragStart(e, track) {
                 <select class="folder-add" @change="addEditFolder">
                   <option value="">{{ $t('library.folders.addTo') }}</option>
                   <option
-                    v-for="row in allFolderRows"
+                    v-for="row in library.flatFolders"
                     :key="row.folder.id"
                     :value="row.folder.id"
                   >{{ '· '.repeat(row.depth) + row.folder.name }}</option>

@@ -15,6 +15,31 @@ export const useBoardsStore = defineStore('boards', {
     current: (s) => s.boards.find((b) => b.id === s.currentBoardId) ?? null,
     selectedButton() {
       return this.current?.buttons.find((b) => b.id === this.selectedButtonId) ?? null
+    },
+    // Quanti bottoni, su TUTTE le board e non solo su quella aperta, puntano a
+    // queste tracce (come audio o come visual della scena).
+    //
+    // I bottoni tengono trackId/visualId, non una copia della traccia: tolta
+    // la traccia dalla libreria il riferimento resta e il bottone si disegna
+    // come «file mancante» / «nessuna traccia», su una board che magari si
+    // riapre fra tre settimane a metà sessione. Questo conteggio esiste per
+    // poterlo dire PRIMA di togliere, non per impedirlo.
+    trackRefs: (s) => (ids) => {
+      const wanted = new Set(ids)
+      let buttons = 0
+      const boards = new Set()
+      for (const b of s.boards) {
+        for (const btn of b.buttons || []) {
+          if (
+            (btn.trackId && wanted.has(btn.trackId)) ||
+            (btn.visualId && wanted.has(btn.visualId))
+          ) {
+            buttons++
+            boards.add(b.id)
+          }
+        }
+      }
+      return { buttons, boards: boards.size }
     }
   },
   actions: {

@@ -102,6 +102,64 @@
       "addTo": "+ folder",
       "removeFrom": "Remove from folder"
     },
+    "dialog": {
+      "open": "Open the big library",
+      "openTitle": "Open the library full-window: big covers to search, a table to tidy up",
+      "title": "Library",
+      "close": "Close",
+      "tagsTitle": "Tags",
+      "view": {
+        "grid": "Grid",
+        "gridTitle": "Big covers: to spot a track at a glance mid-session",
+        "table": "Table",
+        "tableTitle": "Rows with multi-select: to tidy the library between sessions"
+      },
+      "count": "1 track | {n} tracks",
+      "noMatch": "No track matches these filters",
+      "none": "—",
+      "selected": "1 selected | {n} selected",
+      "selectAll": "Select every filtered track",
+      "clear": "Clear the selection",
+      "selectTrack": "Select “{title}”",
+      "hiddenSelected": "+1 selected outside the filters: it will not be touched | +{n} selected outside the filters: they will not be touched",
+      "col": {
+        "title": "Title",
+        "type": "Type",
+        "folders": "Folders",
+        "tags": "Tags"
+      },
+      "sortBy": "Sort by {col}",
+      "bulk": {
+        "tagPlaceholder": "tag",
+        "addTag": "+ Tag",
+        "addTagTitle": "Add this tag to the selected tracks",
+        "removeTag": "− Tag",
+        "removeTagTitle": "Remove this tag from the selected tracks",
+        "folderPlaceholder": "— folder —",
+        "addFolder": "+ Folder",
+        "addFolderTitle": "Add the selected tracks to this folder",
+        "removeFolder": "− Folder",
+        "removeFolderTitle": "Remove the selected tracks from this folder",
+        "typePlaceholder": "— type —",
+        "setType": "Change type",
+        "setTypeTitle": "Change the type of the selected tracks: visuals stay visuals",
+        "delete": "Remove from library",
+        "deleteTitle": "Remove the selected tracks from the library (the files on disk stay)",
+        "done": "1 track updated | {n} tracks updated",
+        "noop": "Nothing to update: they were already like that"
+      },
+      "del": {
+        "ask": "Remove 1 track from the library? | Remove {n} tracks from the library?",
+        "files": "The files on disk are NOT deleted: only the library entry goes away, and it can be imported again.",
+        "refs": "⚠ {buttons} across {boards} will be left without a track (“file missing”)",
+        "refsButtons": "1 button | {n} buttons",
+        "refsBoards": "1 board | {n} boards",
+        "builtin": "1 built-in track cannot be removed: it ships with the app and comes back on restart | {n} built-in tracks cannot be removed: they ship with the app and come back on restart",
+        "confirm": "Remove from library",
+        "nothing": "Nothing to remove: they are all built-in tracks",
+        "done": "1 track removed from the library | {n} tracks removed from the library"
+      }
+    },
     "tagSuggestions": [
       "combat",
       "exploration",

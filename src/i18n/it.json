@@ -102,6 +102,64 @@
       "addTo": "+ cartella",
       "removeFrom": "Togli dalla cartella"
     },
+    "dialog": {
+      "open": "Apri la libreria grande",
+      "openTitle": "Apri la libreria a tutta finestra: copertine grandi per cercare, tabella per sistemare",
+      "title": "Libreria",
+      "close": "Chiudi",
+      "tagsTitle": "Tag",
+      "view": {
+        "grid": "Griglia",
+        "gridTitle": "Copertine grandi: per trovare una traccia a colpo d'occhio durante la sessione",
+        "table": "Tabella",
+        "tableTitle": "Righe con selezione multipla: per sistemare la libreria fra una sessione e l'altra"
+      },
+      "count": "1 traccia | {n} tracce",
+      "noMatch": "Nessuna traccia con questi filtri",
+      "none": "—",
+      "selected": "1 selezionata | {n} selezionate",
+      "selectAll": "Seleziona tutte le tracce filtrate",
+      "clear": "Deseleziona tutto",
+      "selectTrack": "Seleziona «{title}»",
+      "hiddenSelected": "+1 selezionata fuori dai filtri: non verrà toccata | +{n} selezionate fuori dai filtri: non verranno toccate",
+      "col": {
+        "title": "Titolo",
+        "type": "Tipo",
+        "folders": "Cartelle",
+        "tags": "Tag"
+      },
+      "sortBy": "Ordina per {col}",
+      "bulk": {
+        "tagPlaceholder": "tag",
+        "addTag": "+ Tag",
+        "addTagTitle": "Aggiungi questo tag alle tracce selezionate",
+        "removeTag": "− Tag",
+        "removeTagTitle": "Togli questo tag dalle tracce selezionate",
+        "folderPlaceholder": "— cartella —",
+        "addFolder": "+ Cartella",
+        "addFolderTitle": "Aggiungi le tracce selezionate a questa cartella",
+        "removeFolder": "− Cartella",
+        "removeFolderTitle": "Togli le tracce selezionate da questa cartella",
+        "typePlaceholder": "— tipo —",
+        "setType": "Cambia tipo",
+        "setTypeTitle": "Cambia il tipo delle tracce selezionate: i visual restano visual",
+        "delete": "Togli dalla libreria",
+        "deleteTitle": "Togli le tracce selezionate dalla libreria (i file su disco restano)",
+        "done": "1 traccia aggiornata | {n} tracce aggiornate",
+        "noop": "Nessuna traccia da aggiornare: erano già così"
+      },
+      "del": {
+        "ask": "Togliere 1 traccia dalla libreria? | Togliere {n} tracce dalla libreria?",
+        "files": "I file su disco NON vengono cancellati: sparisce solo la voce dalla libreria, e si può reimportare.",
+        "refs": "⚠ {buttons} su {boards} restano senza traccia («file mancante»)",
+        "refsButtons": "1 bottone | {n} bottoni",
+        "refsBoards": "1 board | {n} board",
+        "builtin": "1 traccia di serie non si può togliere: fa parte dell'app e torna al riavvio | {n} tracce di serie non si possono togliere: fanno parte dell'app e tornano al riavvio",
+        "confirm": "Togli dalla libreria",
+        "nothing": "Niente da togliere: sono tutte tracce di serie",
+        "done": "1 traccia tolta dalla libreria | {n} tracce tolte dalla libreria"
+      }
+    },
     "tagSuggestions": [
       "combattimento",
       "esplorazione",

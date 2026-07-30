@@ -149,6 +149,30 @@ export const useLibraryStore = defineStore('library', {
     },
     // Tutti i tag usati in libreria, ordinati alfabeticamente
     allTags: (s) => [...new Set(s.tracks.flatMap((t) => t.tags || []))].sort((a, b) => a.localeCompare(b)),
+    // I tag da mostrare come chip di filtro: quelli presenti in libreria PIÙ
+    // quelli ancora attivi che non esistono più su nessuna traccia. Senza
+    // questi ultimi, togliere l'ultimo tag 'castello' mentre il filtro su
+    // 'castello' è acceso farebbe sparire il chip ma non il filtro: libreria
+    // vuota e nessun modo visibile di sbloccarla.
+    filterTags() {
+      return [...new Set([...this.allTags, ...this.tagFilter])].sort((a, b) => a.localeCompare(b))
+    },
+    // L'albero appiattito in righe { folder, depth, hasChildren }, tutto
+    // aperto. È la forma che serve a chi deve elencare TUTTE le cartelle
+    // (tendine, rail del dialogo); la sidebar ci aggiunge sopra i rami chiusi,
+    // che sono stato di quella vista e non della libreria.
+    flatFolders() {
+      const rows = []
+      const walk = (parentId, depth) => {
+        for (const f of this.childFolders(parentId)) {
+          const children = this.childFolders(f.id)
+          rows.push({ folder: f, depth, hasChildren: children.length > 0 })
+          walk(f.id, depth + 1)
+        }
+      }
+      walk(null, 0)
+      return rows
+    },
     byType() {
       return (type) => this.filtered.filter((t) => t.type === type)
     }
@@ -445,14 +469,114 @@ export const useLibraryStore = defineStore('library', {
       if (!id || id === UNFILED || !this.folderById(id)) return
       for (const t of tracks) if (!t.folderIds?.length) t.folderIds = [id]
     },
+    // Modifica in memoria SENZA salvare: il salvataggio è di chi chiama.
+    // Esiste per le azioni di gruppo, che devono riscrivere index.json una
+    // volta sola invece di una volta per traccia — su cinquanta tracce
+    // sarebbero cinquanta riscritture dell'intero indice, cioè secondi di
+    // disco durante una sessione.
+    _patchTrack(t, patch) {
+      Object.assign(t, patch)
+      // Modificare una traccia builtin crea una copia utente in index.json,
+      // che da quel momento ha precedenza sul builtin. Ogni strada che scrive
+      // su una traccia deve passare di qui: scrivendo tags o folderIds
+      // direttamente, la modifica finirebbe su un oggetto che library:save
+      // scarta e sparirebbe al riavvio senza dire niente.
+      if (t.builtin) t.builtin = false
+    },
     async updateTrack(id, patch) {
       const t = this.byId(id)
       if (!t) return
-      Object.assign(t, patch)
-      // Modificare una traccia builtin crea una copia utente in index.json,
-      // che da quel momento ha precedenza sul builtin
-      if (t.builtin) t.builtin = false
+      this._patchTrack(t, patch)
       await this.persist()
+    },
+
+    // ---- Azioni di gruppo (dialogo libreria) ----
+    // Tutte prendono una lista di id, saltano quello che non cambierebbe
+    // niente e fanno UN solo persist() alla fine. Restituiscono quante tracce
+    // hanno toccato davvero: è il numero che l'interfaccia riporta, e deve
+    // essere quello vero e non quello selezionato — chi aggiunge 'taverna' a
+    // dieci tracce di cui otto ce l'hanno già ha modificato due tracce.
+    async _bulk(ids, fn) {
+      let n = 0
+      for (const id of ids) {
+        const t = this.byId(id)
+        if (!t) continue
+        const patch = fn(t)
+        if (!patch) continue
+        this._patchTrack(t, patch)
+        n++
+      }
+      if (n) await this.persist()
+      return n
+    },
+    // I tag si normalizzano come nell'editor inline (minuscole, senza spazi ai
+    // bordi): due tag che differiscono per una maiuscola sono due chip diversi
+    // nel filtro, e nessuno se ne accorge finché la ricerca non torna vuota.
+    bulkAddTag(ids, tag) {
+      const clean = String(tag || '').trim().toLowerCase()
+      if (!clean) return Promise.resolve(0)
+      return this._bulk(ids, (t) => {
+        const tags = t.tags || []
+        return tags.includes(clean) ? null : { tags: [...tags, clean] }
+      })
+    },
+    bulkRemoveTag(ids, tag) {
+      const clean = String(tag || '').trim().toLowerCase()
+      if (!clean) return Promise.resolve(0)
+      return this._bulk(ids, (t) => {
+        const tags = t.tags || []
+        return tags.includes(clean) ? { tags: tags.filter((x) => x !== clean) } : null
+      })
+    },
+    bulkAddToFolder(ids, folderId) {
+      if (!this.folderById(folderId)) return Promise.resolve(0)
+      return this._bulk(ids, (t) => {
+        const fids = t.folderIds || []
+        return fids.includes(folderId) ? null : { folderIds: [...fids, folderId] }
+      })
+    },
+    bulkRemoveFromFolder(ids, folderId) {
+      return this._bulk(ids, (t) => {
+        const fids = t.folderIds || []
+        return fids.includes(folderId) ? { folderIds: fids.filter((x) => x !== folderId) } : null
+      })
+    },
+    // Il tipo si cambia solo fra i tre tipi audio. Un visual ha mediaPath e
+    // NON ha audioPath: promosso a 'musica' diventerebbe una traccia che non
+    // suona, e una musica retrocessa a 'visual' un bottone di cast senza
+    // niente da mandare in TV. Le tracce visual selezionate vengono saltate,
+    // e il conteggio restituito lo dice.
+    bulkSetType(ids, type) {
+      if (!['music', 'ambience', 'oneshot'].includes(type)) return Promise.resolve(0)
+      return this._bulk(ids, (t) =>
+        t.type === 'visual' || t.type === type ? null : { type }
+      )
+    },
+    // Quante delle tracce indicate sono builtin: non si possono togliere dalla
+    // libreria (vedi deleteTracks) e la conferma deve poterlo dire prima.
+    builtinCount(ids) {
+      const wanted = new Set(ids)
+      return this.tracks.filter((t) => wanted.has(t.id) && t.builtin).length
+    },
+    // Togliere una traccia dalla libreria = togliere la RIGA da index.json.
+    // I file su disco NON si toccano: un mp3 scaricato o un video importato
+    // non è recuperabile, e «togli dalla libreria» non è «cancella i miei
+    // file». Restano dei file non più elencati, che si possono sempre
+    // reimportare.
+    //
+    // Le builtin non sono togliibili: non stanno in index.json, le rimette
+    // library:list a ogni avvio leggendole da builtin-tracks.json. Toglierle
+    // di qui darebbe una libreria che si pulisce e torna piena al riavvio, che
+    // è peggio del dire subito che non si possono togliere.
+    async deleteTracks(ids) {
+      const wanted = new Set(ids)
+      const gone = new Set(
+        this.tracks.filter((t) => wanted.has(t.id) && !t.builtin).map((t) => t.id)
+      )
+      if (!gone.size) return 0
+      this.tracks = this.tracks.filter((t) => !gone.has(t.id))
+      await this.persist()
+      return gone.size
     },
     // Ri-scarica le tracce YouTube con file mancante accodandole come job.
     // Senza argomento le ri-scarica tutte ("aggiorna libreria").
