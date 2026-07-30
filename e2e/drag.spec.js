@@ -229,3 +229,90 @@ test('tastiera: le frecce spostano il bottone selezionato', async () => {
 
   await app.close()
 })
+
+// ---- Regressioni trovate in revisione ----
+
+test('tastiera: un campo di testo a fuoco si tiene i suoi tasti', async () => {
+  const { app, page, readBoards } = await launchApp({ library: LIBRARY })
+  const before = await makeButton(page, readBoards)
+
+  // Il cursore nella ricerca della libreria: le frecce muovono il CURSORE,
+  // non il bottone selezionato.
+  const search = page.locator('.sidebar input.search')
+  await search.fill('mar')
+  await search.press('ArrowLeft')
+  await search.press('ArrowLeft')
+  await page.waitForTimeout(200)
+  let after = readBoards()[0].buttons[0]
+  expect({ row: after.row, col: after.col }).toEqual({ row: before.row, col: before.col })
+
+  // Ctrl+Z nel campo etichetta annulla il TESTO, non la board
+  const label = page.locator('.props input').first()
+  await label.click()
+  await label.press('Control+z')
+  await page.waitForTimeout(200)
+  after = readBoards()[0].buttons[0]
+  expect(after.colSpan).toBe(before.colSpan)
+
+  // fuori dai campi le frecce tornano a muovere il bottone
+  await page.locator('.edit-grid').click({ position: { x: 400, y: 300 } })
+  await page.locator('.btn-wrapper').first().click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press('ArrowDown')
+  await expect.poll(() => readBoards()[0].buttons[0].row).toBe(before.row + 1)
+
+  await app.close()
+})
+
+test('annulla: non attraversa il cambio di board', async () => {
+  const { app, page, readBoards } = await launchApp({ library: LIBRARY })
+  await makeButton(page, readBoards)
+
+  // Una seconda modifica sulla prima board, ed è il punto del test: pushUndo
+  // salva lo stato PRIMA della modifica, quindi dopo il solo inserimento in
+  // cima allo stack c'è una board VUOTA. Riversare quella su una board a sua
+  // volta vuota non si distingue dal comportamento giusto, e il test passava
+  // anche col difetto. Con questa mossa in più l'istantanea in cima contiene
+  // un bottone, e se l'annulla attraversasse il cambio board lo si vedrebbe
+  // comparire dove non è mai stato.
+  await page.keyboard.press('ArrowDown')
+  await expect.poll(() => readBoards()[0].buttons[0].row).toBeGreaterThan(1)
+
+  // Seconda board, vuota
+  await page.getByRole('button', { name: /Nuova board/ }).click()
+  await page.getByPlaceholder('Nome board').fill('Seconda')
+  await page.getByRole('button', { name: 'Crea' }).click()
+  await page.waitForTimeout(300)
+  await page.locator('select.board-select').selectOption({ label: 'Seconda' })
+  await page.waitForTimeout(300)
+
+  const seconda = () => readBoards().find((b) => b.name === 'Seconda')
+  const prima = () => readBoards().find((b) => b.name === 'Test')
+  expect(seconda().buttons).toHaveLength(0)
+
+  // Ctrl+Z qui non deve riversare i bottoni della prima board su questa
+  await page.keyboard.press('Control+z')
+  await page.waitForTimeout(400)
+  expect(seconda().buttons).toHaveLength(0)
+  expect(prima().buttons).toHaveLength(1)
+
+  await app.close()
+})
+
+test('annulla: scrivere un etichetta fa una voce sola, non una per lettera', async () => {
+  const { app, page, readBoards } = await launchApp({ library: LIBRARY })
+  await makeButton(page, readBoards)
+
+  const label = page.locator('.props input').first()
+  await label.fill('')
+  await label.pressSequentially('Taverna', { delay: 30 })
+  await expect.poll(() => readBoards()[0].buttons[0].label).toBe('Taverna')
+
+  // Un solo annulla riporta l'etichetta di partenza: se ogni lettera fosse una
+  // voce ne servirebbero sette e qui ne resterebbe "Tavern"
+  await page.locator('.edit-grid').click({ position: { x: 400, y: 300 } })
+  await page.locator('.btn-wrapper').first().click({ position: { x: 5, y: 5 } })
+  await page.keyboard.press('Control+z')
+  await expect.poll(() => readBoards()[0].buttons[0].label).toBe('Marcia')
+
+  await app.close()
+})

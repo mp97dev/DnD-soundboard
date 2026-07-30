@@ -15,6 +15,9 @@ export const useBoardsStore = defineStore('boards', {
     currentBoardId: null,
     selectedButtonId: null,
     undoStack: [],
+    // chiave e istante dell'ultimo accorpamento (vedi pushUndo)
+    _undoKey: null,
+    _undoAt: 0,
     redoStack: [],
     mode: 'play' // 'play' | 'edit'
   }),
@@ -59,6 +62,14 @@ export const useBoardsStore = defineStore('boards', {
     async openBoard(id) {
       this.currentBoardId = id
       this.selectedButtonId = null
+      // Gli stack seguono la board, e cambiando board si buttano. Le
+      // istantanee sono liste di bottoni senza il nome di chi le ha prodotte:
+      // annullare dopo un cambio board avrebbe scritto i bottoni della board
+      // precedente SOPRA quelli di questa, cancellandoli. Un annulla che
+      // distrugge il lavoro altrove è peggio di un annulla che non c'è.
+      this.undoStack = []
+      this.redoStack = []
+      this._undoKey = null
       // Ri-scarica in background i file mancanti usati dalla board,
       // senza bloccare il cambio di board
       const library = useLibraryStore()
@@ -105,8 +116,19 @@ export const useBoardsStore = defineStore('boards', {
     _snapshot() {
       return JSON.stringify(this.current?.buttons ?? [])
     },
-    pushUndo() {
+    // coalesceKey: modifiche continue dello stesso tipo sullo stesso bottone
+    // fanno UNA voce sola. L'etichetta si salva a ogni tasto premuto, quindi
+    // scrivere "Taverna del Drago" produceva diciotto istantanee e Ctrl+Z
+    // tornava indietro di una lettera per volta.
+    pushUndo(coalesceKey = null) {
       if (!this.current) return
+      const now = Date.now()
+      if (coalesceKey && coalesceKey === this._undoKey && now - this._undoAt < 1500) {
+        this._undoAt = now
+        return
+      }
+      this._undoKey = coalesceKey
+      this._undoAt = now
       this.undoStack.push(this._snapshot())
       if (this.undoStack.length > MAX_UNDO) this.undoStack.shift()
       // Un'azione nuova dopo un annulla taglia il futuro: tenere il redo
@@ -123,6 +145,9 @@ export const useBoardsStore = defineStore('boards', {
       await this.saveCurrent()
     },
     async undo() {
+      // Chiude l'accorpamento in corso: la prossima modifica non deve
+      // attaccarsi a un'istantanea appena tolta dallo stack
+      this._undoKey = null
       const prev = this.undoStack.pop()
       if (prev === undefined) return false
       this.redoStack.push(this._snapshot())
@@ -171,7 +196,8 @@ export const useBoardsStore = defineStore('boards', {
     async updateButton(id, patch) {
       const btn = this.current?.buttons.find((b) => b.id === id)
       if (!btn) return
-      this.pushUndo()
+      const keys = Object.keys(patch)
+      this.pushUndo(keys.length === 1 && keys[0] === 'label' ? `label:${id}` : null)
       Object.assign(btn, patch)
       // Clamp dentro i bordi. La collisione fra bottoni NON si controlla qui:
       // il chiamante ha già deciso (il trascinamento rifiuta il rilascio su

@@ -185,7 +185,20 @@ async function onDrop(e) {
 // fine, che col trascinamento richiede una mira che a mouse non si ha, e
 // perché tutta la modifica di una board non può dipendere dal saper
 // trascinare.
+// Un campo di testo a fuoco si tiene i suoi tasti. Il listener sta su window
+// perché la griglia non ha il fuoco, ma in edit mode ci sono quasi venti fra
+// input e textarea (ricerca, tag, etichetta, URL): senza questo controllo
+// muovere il cursore fra le lettere della ricerca spostava il bottone
+// selezionato, e Ctrl+Z nel campo dell'etichetta annullava la board invece
+// del testo appena scritto.
+function isTyping(target) {
+  if (!target) return false
+  if (target.isContentEditable) return true
+  return /^(input|textarea|select)$/i.test(target.tagName)
+}
+
 async function onKeydown(e) {
+  if (isTyping(e.target)) return
   const mod = e.ctrlKey || e.metaKey
   if (mod && e.key.toLowerCase() === 'z') {
     e.preventDefault()
