@@ -117,13 +117,16 @@ test('builtin mancante: il bottone "file mancanti" la ri-scarica', async () => {
   const track = page.locator('.track', { hasText: 'Builtin Track' })
   await expect(track).toHaveClass(/missing/)
 
-  const updateBtn = page.getByRole('button', { name: /file mancanti/ })
+  // mancant[ei]: con un file solo il bottone dice "1 file mancante", al
+  // plurale "N file mancanti". Il test ne ha uno, ma il selettore non deve
+  // dipendere da quanti sono.
+  const updateBtn = page.getByRole('button', { name: /file mancant[ei]/ })
   await updateBtn.click()
   await expect(page.locator('.job')).toBeVisible()
 
   // A fine ri-download: non più mancante, bottone sparito, nessun errore
   await expect(track).not.toHaveClass(/missing/, { timeout: 20_000 })
-  await expect(page.getByRole('button', { name: /file mancanti/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /file mancant[ei]/ })).toHaveCount(0)
   await expect(page.locator('.error')).toHaveCount(0)
 
   await app.close()

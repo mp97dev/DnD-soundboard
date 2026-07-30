@@ -34,7 +34,9 @@ test('export/import: round-trip di board tra istanze diverse', async () => {
 
   // La board importata compare nel selettore
   await expect(b.page.locator('select.board-select')).toHaveValue(/my-board/, { timeout: 10_000 })
-  await expect(b.page.locator('.io-msg')).toContainText('Importate')
+  // Non "Importate": con una board sola il plurale vero è "Importata 1 board".
+  // Prima la stringa era cablata al plurale e sbagliava la concordanza sempre.
+  await expect(b.page.locator('.io-msg')).toHaveText(/Importat[ae] \d+ board/)
   await b.app.close()
 
   fs.rmSync(exportPath, { force: true })
