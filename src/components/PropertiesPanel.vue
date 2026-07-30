@@ -85,12 +85,20 @@ function setVolume(v) {
 </template>
 
 <style scoped>
+/* flex-shrink:0 perché è il pannello che dice cosa hai selezionato: se si
+   lascia stringere, su una finestra bassa sparisce sotto il bordo e non c'è
+   modo di sapere su quale bottone si sta lavorando. Con molti campi va a capo e
+   diventa alto, quindi si dà un tetto e da lì in poi scorre, invece di rubare
+   tutta la griglia. */
 .props {
   display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
   padding: 12px 14px;
   background: var(--bg-panel);
   border-top: 1px solid var(--border);
   min-height: 64px;
+  flex-shrink: 0;
+  max-height: 45%;
+  overflow-y: auto;
 }
 label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-dim); }
 select { max-width: 240px; }

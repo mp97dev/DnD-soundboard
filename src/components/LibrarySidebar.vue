@@ -282,6 +282,10 @@ function onDragStart(e, track) {
 
 <template>
   <aside class="sidebar" :style="{ width: sidebarWidth + 'px' }">
+    <!-- Tutto il contenuto scorre QUI DENTRO, non nella .sidebar: la maniglia
+         di ridimensionamento è absolute rispetto alla sidebar e scorrerebbe
+         via col contenuto invece di restare agganciata al bordo. -->
+    <div class="side-scroll">
     <div class="head-row">
       <h3>{{ $t('library.title') }}</h3>
       <button
@@ -298,7 +302,6 @@ function onDragStart(e, track) {
       >🔍</button>
     </div>
 
-    <LibraryDialog ref="dialog" />
 
     <input v-model="library.search" :placeholder="$t('library.searchPlaceholder')" class="search" />
 
@@ -630,19 +633,34 @@ function onDragStart(e, track) {
     <datalist id="tag-suggestions">
       <option v-for="tag in knownTags" :key="tag" :value="tag" />
     </datalist>
+    </div>
 
+    <LibraryDialog ref="dialog" />
     <div class="resize-handle" @pointerdown="onResizeStart"></div>
   </aside>
 </template>
 
 <style scoped>
 .sidebar {
-  display: flex; flex-direction: column; gap: 10px;
-  padding: 12px;
+  display: flex; flex-direction: column;
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
-  overflow-y: auto;
+  overflow: hidden;
   position: relative; flex-shrink: 0;
+}
+/* Il contenuto scorre qui, e scorre TUTTO INSIEME.
+   Prima era .sections a farsi carico del rimpicciolimento (flex:1 +
+   min-height:0), così la sidebar non scrollava e la maniglia restava al suo
+   posto. Poi sopra .sections è arrivato l'albero delle cartelle, che cresce con
+   quante ne fai: a 1024x640 i blocchi fissi ne occupavano 513 su 529 e la lista
+   delle tracce veniva schiacciata a ZERO — nessuna traccia visibile e niente da
+   scorrere. Ora a scorrere è il contenitore, la maniglia gli sta fuori, e ogni
+   blocco tiene la sua altezza. */
+.side-scroll {
+  flex: 1; min-height: 0;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px;
 }
 h3 { margin: 0; font-size: 15px; }
 h4 { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.6px; }
@@ -670,7 +688,10 @@ h4 { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; color: var(-
 }
 .mode-btn.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 /* ---- Albero delle cartelle ---- */
-.folders { display: flex; flex-direction: column; }
+/* L'albero cresce con le cartelle: senza un tetto, con una decina di campagne
+   si mangia la sidebar intera e le tracce non compaiono più. Oltre il tetto
+   scorre per conto suo. */
+.folders { display: flex; flex-direction: column; max-height: 34vh; overflow-y: auto; flex-shrink: 0; }
 .folders-head { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
 /* Tetto all'altezza: con dieci campagne l'albero spingerebbe fuori schermo la
    libreria vera, che è la parte che si usa di più */
@@ -783,12 +804,9 @@ h4 { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; color: var(-
 .missing-badge { flex-shrink: 0; font-size: 12px; color: var(--danger); }
 .local-missing { color: var(--danger); font-size: 12px; margin: 0; }
 .error { color: var(--danger); font-size: 12px; margin: 0; }
-/* min-height:0 annulla il min-height:auto di default dei flex item: senza,
-   .sections si rifiuta di rimpicciolirsi sotto il suo contenuto e a traboccare
-   è la .sidebar. Che scrolla — portandosi via .resize-handle, che è absolute
-   rispetto al padding box e quindi scorre col contenuto invece di restare
-   agganciata al bordo. */
-.sections { flex: 1; min-height: 0; overflow-y: auto; }
+/* Altezza naturale: a scorrere è .side-scroll. Con flex:1 la lista si prendeva
+   tutto lo spazio avanzato e, quando non ne avanzava, spariva del tutto. */
+.sections { flex: 0 0 auto; }
 .track {
   display: flex; align-items: center; gap: 8px;
   padding: 7px 8px;

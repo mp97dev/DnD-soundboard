@@ -306,7 +306,11 @@ const gridArea = (p) => ({
   grid-template-columns: auto 1fr;
   height: 100%;
 }
-.grid-area { display: flex; flex-direction: column; min-width: 0; }
+/* min-height:0 oltre a min-width:0: i figli di una griglia hanno min-height
+   auto e si rifiutano di scendere sotto il proprio contenuto, quindi senza
+   questo la colonna cresce oltre la finestra invece di lasciare che sia
+   .edit-grid a cedere spazio. */
+.grid-area { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .edit-grid {
   display: grid;
   gap: 8px;

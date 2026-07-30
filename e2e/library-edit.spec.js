@@ -46,3 +46,40 @@ test('libreria: rinomina e tag dall\'editor inline', async () => {
 
   await app.close()
 })
+
+// Regressione dell'hotfix 1.0.3: con parecchie cartelle i blocchi fissi della
+// sidebar si prendevano tutta l'altezza e la lista delle tracce veniva
+// schiacciata a zero. Nessuna traccia a schermo e niente da scorrere.
+test('libreria: con molte cartelle la lista tracce resta raggiungibile', async () => {
+  const folders = Array.from({ length: 10 }, (_, i) => ({
+    id: `f${i}`, name: `Campagna ${i + 1}`, parentId: null, color: null
+  }))
+  const tracks = Array.from({ length: 25 }, (_, i) => ({
+    id: `t${i}`, version: 1, title: `Traccia numero ${i + 1}`, type: 'music',
+    volume: 1, audioPath: `library/downloaded/${i}.mp3`, thumbnailPath: null,
+    tags: [], folderIds: [], source: { type: 'local' }
+  }))
+  const { app, page } = await launchApp({ library: { folders, tracks } })
+  await page.setViewportSize({ width: 1024, height: 640 })
+  await createBoard(page, 'Test')
+  await page.getByRole('button', { name: /Edit/ }).click()
+  await page.waitForSelector('.sidebar')
+
+  // La lista non è schiacciata a zero...
+  const sections = page.locator('.sections')
+  await expect(sections).toBeVisible()
+  expect((await sections.boundingBox()).height).toBeGreaterThan(100)
+
+  // ...e l'ultima traccia si raggiunge davvero scorrendo
+  const last = page.locator('.sidebar .track', { hasText: 'Traccia numero 25' }).first()
+  await last.scrollIntoViewIfNeeded()
+  await expect(last).toBeInViewport()
+
+  // La maniglia di ridimensionamento non se ne va con lo scorrimento: sta
+  // fuori dal contenitore che scorre, ed è tutto il motivo per cui esiste.
+  const handle = await page.locator('.resize-handle').boundingBox()
+  const side = await page.locator('.sidebar').boundingBox()
+  expect(Math.abs(handle.y - side.y)).toBeLessThan(2)
+
+  await app.close()
+})
