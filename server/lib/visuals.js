@@ -70,14 +70,29 @@ function currentForViewer() {
   return { rel, contentType, title, ts }
 }
 
+// Quanto si continua a considerare "a schermo" un visual dopo che la sessione
+// cast è caduta. Copre il buco fra closeSession() e il momento in cui la
+// riconnessione si segna come in corso, e il singhiozzo di fine media: alla
+// fine di un giro il receiver può chiudere la sessione e riprenderla subito,
+// e un sondaggio capitato lì in mezzo spegneva il bottone mentre il video
+// continuava a girare. Più lungo dell'intervallo di sondaggio del renderer
+// (5s), se no il buco lo si vede lo stesso.
+const CAST_GRACE_MS = 12000
+let castLostAt = null
+
 function status() {
   const st = cast.status()
+  // Traccia da quanto la sessione è giù. Si azzera appena torna, così una
+  // caduta vera (TV spenta) spegne comunque il bottone passata la tolleranza.
+  if (st.casting || st.reconnecting) castLostAt = null
+  else if (castLostAt === null) castLostAt = Date.now()
+  const withinGrace = castLostAt !== null && Date.now() - castLostAt < CAST_GRACE_MS
   // Quale visual la UI deve mostrare come attivo. In solo-viewer resta acceso
   // finché il tablet lo mostra; con una TV agganciata si spegne quando la
   // sessione è persa e non c'è più una riconnessione in corso. Prima la regola
   // stava nel renderer, che per applicarla doveva leggersi le impostazioni per
   // sapere se una TV fosse selezionata.
-  const onScreen = current && (!current.host || st.casting || st.reconnecting)
+  const onScreen = current && (!current.host || st.casting || st.reconnecting || withinGrace)
   return { ...st, visualId: onScreen ? current.visualId : null }
 }
 
