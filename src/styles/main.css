@@ -1,17 +1,4 @@
-:root {
-  --bg: #14161c;
-  --bg-panel: #1c1f27;
-  --bg-raised: #252933;
-  --border: #323845;
-  --text: #e8e6e0;
-  --text-dim: #8b8f9a;
-  --music: #3b82f6;      /* blu: musica attiva */
-  --ambience: #22c55e;   /* verde: ambience attiva */
-  --oneshot: #f59e0b;    /* ambra: flash one-shot */
-  --visual: #a855f7;     /* viola: visual in cast su Chromecast */
-  --danger: #ef4444;
-  --radius: 10px;
-}
+@import './tokens.css';
 
 * { box-sizing: border-box; }
 
@@ -37,7 +24,10 @@ button {
   padding: 10px 16px;
 }
 button:hover { border-color: var(--text-dim); }
-button.primary { background: var(--music); border-color: var(--music); }
+/* Primario, focus e slider sono ruoli d'accento, non "questo è musica": finché
+   prendevano --music il blu della musica finiva addosso a mezza interfaccia e
+   smetteva di voler dire qualcosa sui bottoni. */
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 button.danger { background: transparent; border-color: var(--danger); color: var(--danger); }
 
 input, select {
@@ -50,11 +40,11 @@ input, select {
   font-size: 15px;
 }
 input:focus, select:focus, button:focus-visible {
-  outline: 2px solid var(--music);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
-input[type='range'] { accent-color: var(--music); padding: 0; }
+input[type='range'] { accent-color: var(--accent); padding: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }

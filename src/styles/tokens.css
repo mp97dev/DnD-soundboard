@@ -1,0 +1,110 @@
+/* Livello token: qui vive TUTTO il colore dell'app. I componenti non scrivono
+   mai un colore letterale, così cambiare tema resta uno swap di attributo su
+   <html> e non una caccia agli hex sparsi nei .vue.
+   Il tema si sceglie con data-theme sulla radice; senza attributo vale candela,
+   che è il tema con cui l'app si presenta. */
+
+/* Candela — terra d'ombra e pergamena, accento ottone: il buio caldo di un
+   tavolo illuminato a candela, che è la stanza in cui questa app viene usata.
+   È il default perché una sessione si gioca quasi sempre a luci basse. */
+:root,
+:root[data-theme='candela'] {
+  color-scheme: dark;
+  --bg: #17130f;
+  --bg-panel: #201a15;
+  --bg-raised: #2b231c;
+  --border: #3a3027;
+  --text: #ece3d2;
+  --text-dim: #9a8b76;
+  --accent: #c9922f;
+  --on-accent: #17130f;
+  --music: #4a7c9b;
+  --ambience: #6b8f5e;
+  --oneshot: #c9622f;
+  --visual: #8a6bab;
+  --danger: #b4453a;
+}
+
+/* Notturno — indaco profondo e oro. Stessa penombra di candela ma fredda, con
+   stati più contrastati per chi gioca con la board proiettata o su un monitor
+   scadente. */
+:root[data-theme='notturno'] {
+  color-scheme: dark;
+  --bg: #12121c;
+  --bg-panel: #1a1a28;
+  --bg-raised: #242438;
+  --border: #32324a;
+  --text: #e4e2f0;
+  --text-dim: #8a88a6;
+  --accent: #d4af5f;
+  --on-accent: #12121c;
+  --music: #5b8fd6;
+  --ambience: #3fae94;
+  --oneshot: #e0864a;
+  --visual: #a578e0;
+  --danger: #e05a5a;
+}
+
+/* Giorno — per preparare le sessioni con la finestra aperta, dove un tema scuro
+   diventa uno specchio. Qui l'accento è più cupo del testo su cui poggia: su
+   fondo chiaro un oro brillante sparisce, quindi --on-accent va al contrario
+   rispetto ai due temi scuri. */
+:root[data-theme='giorno'] {
+  color-scheme: light;
+  --bg: #efede6;
+  --bg-panel: #f8f7f3;
+  --bg-raised: #ffffff;
+  --border: #d3cfc3;
+  --text: #232019;
+  --text-dim: #6e685b;
+  --accent: #a2701a;
+  --on-accent: #fdfbf6;
+  --music: #2e6a99;
+  --ambience: #3f7d4e;
+  --oneshot: #b3591b;
+  --visual: #6d4b9e;
+  --danger: #b03024;
+}
+
+/* Custom — la palette la scrive a runtime chi sceglie i colori, come proprietà
+   inline su <html> (--bg, --text, --accent, e i colori di categoria).
+   Solo qui i quattro token strutturali si ricavano da bg e testo: un utente che
+   sceglie due colori non deve poter produrre bordi invisibili o testo dim
+   illeggibile. I tre temi sopra NON usano questa derivazione perché sono
+   accordati a mano — la derivazione garantisce un risultato leggibile, non un
+   risultato pensato.
+   color-scheme resta quello di candela: senza sapere se la palette scelta è
+   chiara o scura non c'è una risposta giusta, e chi la scrive può metterlo
+   inline insieme ai colori. */
+:root[data-theme='custom'] {
+  --bg-panel: color-mix(in srgb, var(--bg) 92%, var(--text));
+  --bg-raised: color-mix(in srgb, var(--bg) 84%, var(--text));
+  --border: color-mix(in srgb, var(--bg) 74%, var(--text));
+  --text-dim: color-mix(in srgb, var(--text) 58%, var(--bg));
+  /* L'accento è per definizione scelto per staccare dal fondo, quindi il fondo
+     è la cosa più leggibile che ci si possa scrivere sopra. */
+  --on-accent: var(--bg);
+}
+
+/* Token che non sono colore ma ruolo: dipendono solo da --bg/--bg-panel/--text
+   e quindi seguono il tema attivo da soli, custom compreso. */
+:root {
+  --radius: 10px;
+
+  /* Hover di righe e celle. Derivato invece che fissato per tema perché in
+     candela e notturno cade praticamente su --bg-raised, mentre in giorno
+     --bg-raised è bianco puro: un hover bianco su un pannello quasi bianco non
+     si vede, e la libreria si naviga a tentoni. */
+  --hover: color-mix(in srgb, var(--text) 7%, var(--bg-panel));
+  /* Fondo degli elementi scavati (binario della barra di download). Serve più
+     stacco dell'hover: su giorno una barra da 4px con 7% di inchiostro sparisce. */
+  --sunken: color-mix(in srgb, var(--text) 15%, var(--bg-panel));
+
+  /* Alone dell'etichetta sopra la copertina del bottone. Non è un'ombra nera:
+     è il fondo del tema stesso, così il testo mantiene ovunque lo stesso
+     rapporto testo/fondo che ha nel resto dell'interfaccia — su giorno un'ombra
+     nera dietro testo scuro lo impasterebbe invece di staccarlo. */
+  --label-shadow:
+    0 1px 2px var(--bg),
+    0 0 8px color-mix(in srgb, var(--bg) 85%, transparent);
+}

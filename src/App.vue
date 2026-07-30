@@ -6,6 +6,7 @@ import { useSettingsStore } from './stores/settings'
 import { usePlaybackStore } from './stores/playback'
 import PlayMode from './components/PlayMode.vue'
 import EditMode from './components/EditMode.vue'
+import ThemeEditor from './components/ThemeEditor.vue'
 import { startHealthHeartbeat } from './health'
 
 const boards = useBoardsStore()
@@ -173,6 +174,7 @@ async function importConfig() {
         title="Link della pagina viewer: aprila su tablet/altri schermi per vedere i visual"
         @click="copyViewerLink"
       >📱</button>
+      <ThemeEditor />
       <button title="Esporta board e impostazioni in un file .dnds (senza gli mp3)" @click="exportConfig">⤓ Esporta</button>
       <button title="Importa board e impostazioni da un file .dnds" @click="importConfig">⤒ Importa</button>
 
@@ -225,7 +227,7 @@ async function importConfig() {
 .dim { color: var(--text-dim); font-size: 13px; }
 .mode-switch { display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .mode-switch button { border: none; border-radius: 0; }
-.mode-switch button.active { background: var(--music); }
+.mode-switch button.active { background: var(--accent); color: var(--on-accent); }
 .content { flex: 1; min-height: 0; }
 .empty { display: grid; place-items: center; height: 100%; color: var(--text-dim); }
 </style>

@@ -4,6 +4,44 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DnD Soundboard</title>
+    <script>
+      /* Il tema deve stare su <html> PRIMA del primo paint. Le impostazioni
+         arrivano dall'IPC e quindi in modo asincrono (settings.load()): se
+         l'attributo lo scrivesse solo Vue, ogni avvio mostrerebbe mezzo secondo
+         di candela prima del tema vero. Qui si legge il mirror in localStorage,
+         che è sincrono; il file su disco resta la verità e lo store riallinea
+         tutto appena risponde. Deliberatamente senza import: un modulo verrebbe
+         differito e il lampo tornerebbe. */
+      ;(function () {
+        var root = document.documentElement
+        try {
+          var theme = localStorage.getItem('theme')
+          /* Mirror assente: qui non si può leggere il file, quindi si tira a
+             indovinare con l'OS solo per avere qualcosa da dipingere. A decidere
+             davvero è lo store, che legge le impostazioni su disco; se il mirror
+             era sparito ma un tema era stato scelto, si vede un lampo al primo
+             avvio e poi il mirror torna a posto. */
+          if (!theme) {
+            theme = window.matchMedia('(prefers-color-scheme: light)').matches
+              ? 'giorno'
+              : 'candela'
+          }
+          root.setAttribute('data-theme', theme)
+          if (theme === 'custom') {
+            var custom = JSON.parse(localStorage.getItem('customTheme'))
+            for (var k in custom) root.style.setProperty('--' + k, custom[k])
+            /* Chiaro o scuro lo ha già deciso lo store quando i colori sono stati
+               scelti: qui si riapplica e basta, invece di rifare il conto della
+               luminanza in due posti che possono divergere. */
+            root.style.colorScheme = localStorage.getItem('themeScheme') || ''
+          }
+        } catch (e) {
+          /* Mirror illeggibile o storage negato: l'app parte comunque col tema
+             di default e lo store rimette a posto tutto un istante dopo. Qui
+             non si può rompere niente: è il primo script della pagina. */
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>

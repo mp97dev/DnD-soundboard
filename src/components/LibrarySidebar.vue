@@ -404,7 +404,7 @@ h4 { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; color: var(-
   user-select: none;
   white-space: nowrap;
 }
-.tag-chip.active { background: var(--music); color: #fff; }
+.tag-chip.active { background: var(--accent); color: var(--on-accent); }
 .tag-chip.editing {
   display: inline-flex; align-items: center; gap: 3px;
   cursor: default; background: var(--bg-panel); border: 1px solid var(--border);
@@ -452,13 +452,15 @@ h4 { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; color: var(-
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .job-error { color: var(--danger); }
+/* Il binario non può essere --bg-raised: sui temi chiari "sollevato" vuol dire
+   bianco, e una barra bianca su un pannello quasi bianco non esiste. */
 .dl-bar {
   height: 4px; border-radius: 2px; overflow: hidden;
-  background: var(--bg-raised);
+  background: var(--sunken);
 }
 .dl-fill {
   height: 100%; border-radius: 2px;
-  background: var(--music);
+  background: var(--accent);
   transition: width 0.2s;
 }
 .dl-bar.indeterminate .dl-fill {
@@ -486,7 +488,7 @@ h4 { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; color: var(-
   border-radius: 6px;
   cursor: grab;
 }
-.track:hover { background: var(--bg-raised); }
+.track:hover { background: var(--hover); }
 .track.missing { opacity: 0.5; }
 .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .type-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }

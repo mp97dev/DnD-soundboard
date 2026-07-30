@@ -119,7 +119,7 @@ function onClick() {
   opacity: 0.25;
   pointer-events: none;
 }
-.label { position: relative; z-index: 1; text-shadow: 0 1px 3px rgba(0,0,0,0.8); text-align: center; }
+.label { position: relative; z-index: 1; text-shadow: var(--label-shadow); text-align: center; }
 .warn { position: relative; z-index: 1; font-size: 11px; color: var(--danger); font-weight: 400; }
 
 .type-dot {
@@ -150,7 +150,9 @@ function onClick() {
 }
 .cast-badge.casting { filter: none; }
 
-/* Stati visivi (spec): blu musica, verde ambience, flash one-shot */
+/* Stati visivi (spec): un colore per categoria, più il flash del one-shot.
+   Le percentuali di color-mix stanno sopra --bg-raised, quindi la tinta si
+   schiarisce sui temi scuri e si scurisce su quelli chiari da sola. */
 .active-music { border-color: var(--music); background: color-mix(in srgb, var(--music) 28%, var(--bg-raised)); }
 .active-ambience { border-color: var(--ambience); background: color-mix(in srgb, var(--ambience) 24%, var(--bg-raised)); }
 .active-cast { border-color: var(--visual); background: color-mix(in srgb, var(--visual) 24%, var(--bg-raised)); }
@@ -161,5 +163,7 @@ function onClick() {
 }
 .missing { border-style: dashed; opacity: 0.55; }
 .unassigned { border-style: dashed; color: var(--text-dim); }
-.selected { outline: 2px solid var(--oneshot); outline-offset: 2px; }
+/* La selezione è chrome dell'editor, non una categoria: con --oneshot un
+   bottone selezionato e un one-shot che lampeggia avevano lo stesso colore. */
+.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>
