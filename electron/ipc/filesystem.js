@@ -4,6 +4,19 @@ const path = require('path')
 const crypto = require('crypto')
 const { spawn } = require('child_process')
 const { DIRS, LIBRARY_INDEX, DATA_DIR } = require('../paths')
+const { readSettings, writeSettings } = require('./settings')
+
+// Riapre i dialog di import dove si era arrivati l'ultima volta. Se la cartella
+// non c'è più (chiavetta staccata, share di rete giù) non passiamo defaultPath:
+// showOpenDialog con un path morto si apre in un punto a caso o non si apre
+function lastImportDir(key) {
+  const dir = readSettings()[key]
+  return dir && fs.existsSync(dir) ? { defaultPath: dir } : {}
+}
+
+function rememberImportDir(key, filePaths) {
+  if (filePaths.length) writeSettings({ [key]: path.dirname(filePaths[0]) })
+}
 
 // ffmpeg bundled (extraResource / ./bin in dev) o nel PATH di sistema
 function ffmpegPath() {
@@ -102,9 +115,11 @@ module.exports = function registerFilesystemIpc() {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       title: 'Importa audio',
       filters: [{ name: 'Audio', extensions: ['mp3', 'ogg', 'wav', 'm4a', 'flac'] }],
-      properties: ['openFile', 'multiSelections']
+      properties: ['openFile', 'multiSelections'],
+      ...lastImportDir('lastImportDirAudio')
     })
     if (canceled) return []
+    rememberImportDir('lastImportDirAudio', filePaths)
 
     // Copie asincrone: copyFileSync sul main process congela l'intera app
     // (UI compresa) quando si importano molti file grossi in un colpo solo
@@ -135,9 +150,11 @@ module.exports = function registerFilesystemIpc() {
       filters: [
         { name: 'Immagini e video', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'mp4', 'm4v', 'webm'] }
       ],
-      properties: ['openFile', 'multiSelections']
+      properties: ['openFile', 'multiSelections'],
+      ...lastImportDir('lastImportDirVisual')
     })
     if (canceled) return []
+    rememberImportDir('lastImportDirVisual', filePaths)
 
     // Come per l'audio: mai copyFileSync qui, i video da 40-100MB bloccano
     // il main process per decine di secondi

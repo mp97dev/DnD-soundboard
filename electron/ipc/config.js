@@ -3,13 +3,10 @@ const fs = require('fs')
 const path = require('path')
 const { DIRS, LIBRARY_INDEX, SETTINGS_FILE } = require('../paths')
 
-// Tenuto allineato con i DEFAULTS in ipc/settings.js
-const DEFAULT_SETTINGS = {
-  version: 1,
-  masterVolume: 0.8,
-  musicTransition: 'crossfade',
-  transitionDuration: 3000
-}
+// Presi da ipc/settings.js invece di ricopiarli: la copia locale era commentata
+// "tenuta allineata" ed era già indietro di quattro chiavi. Un default che
+// diverge qui si nota solo il giorno in cui il file è illeggibile, cioè tardi.
+const { DEFAULTS: DEFAULT_SETTINGS } = require('./settings')
 
 const EXPORT_TYPE = 'dnd-soundboard-export'
 

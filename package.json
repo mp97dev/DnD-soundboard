@@ -41,6 +41,9 @@
     "vue": "^3.4.0",
     "ws": "^8.18.0"
   },
+  "overrides": {
+    "protobufjs": "^7.5.4"
+  },
   "build": {
     "appId": "com.dnd.soundboard",
     "productName": "DnD Soundboard",

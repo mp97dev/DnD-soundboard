@@ -99,8 +99,12 @@ function getSettings() {
   return { ...SETTINGS_DEFAULTS, ...readJson(SETTINGS_FILE, {}) }
 }
 
+// Merge sopra il file, non solo sopra i DEFAULTS: Electron e il server web
+// condividono lo stesso settings.json, e il main process ci scrive chiavi che
+// il client web non conosce (lastImportDir*). Con lo spread dei soli DEFAULTS
+// un salvataggio qualsiasi dal web le azzererebbe.
 function saveSettings(s) {
-  writeJson(SETTINGS_FILE, { ...SETTINGS_DEFAULTS, ...s })
+  writeJson(SETTINGS_FILE, { ...SETTINGS_DEFAULTS, ...readJson(SETTINGS_FILE, {}), ...s })
   return true
 }
 
