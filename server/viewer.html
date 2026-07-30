@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Soundboard Viewer</title>
 <link rel="manifest" href="/viewer.webmanifest">
+<!-- iOS non legge icons dal manifest: senza questa, l'icona in Home diventa
+     una miniatura della pagina, cioè un rettangolo nero. -->
+<link rel="apple-touch-icon" href="/viewer-icon-192.png">
 <!-- iOS non legge display:fullscreen dal manifest: da lì la pagina aggiunta
      alla Home parte senza barre solo con questi due meta. -->
 <meta name="mobile-web-app-capable" content="yes">

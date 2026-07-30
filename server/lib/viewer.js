@@ -11,6 +11,7 @@
 const fs = require('fs')
 const path = require('path')
 const visuals = require('./visuals')
+const icon = require('./icon')
 
 let html = null
 function viewerHtml() {
@@ -54,7 +55,18 @@ function manifestResponse() {
       display: 'fullscreen',
       orientation: 'landscape',
       background_color: '#000000',
-      theme_color: '#000000'
+      theme_color: '#000000',
+      // Senza icons Chrome non considera la pagina installabile e "Aggiungi a
+      // schermata Home" fa una scorciatoia che si apre nel browser CON le
+      // barre: display:fullscreen non verrebbe mai applicato. maskable perché
+      // il fondo riempie tutto il quadrato, quindi Android può ritagliarla
+      // senza metterci sotto una piastra bianca.
+      icons: icon.SIZES.map((size) => ({
+        src: `/viewer-icon-${size}.png`,
+        sizes: `${size}x${size}`,
+        type: 'image/png',
+        purpose: 'any maskable'
+      }))
     })
   }
 }
@@ -78,4 +90,14 @@ function currentResponse(ifNoneMatch) {
 
 // Fuori escono solo le risposte: l'HTML da solo non serve a nessuno degli host
 // e riesportarlo rimetterebbe in circolo la variante che può lanciare.
-module.exports = { pageResponse, currentResponse, manifestResponse }
+// Solo le misure dichiarate nel manifest: la misura arriva dall'URL, e
+// generare un PNG di dimensione arbitraria a richiesta è lavoro che chiunque
+// sulla LAN potrebbe chiedere in continuazione.
+function iconResponse(size) {
+  if (!icon.SIZES.includes(size)) {
+    return { status: 404, headers: { 'Content-Type': 'text/plain' }, body: 'Not found' }
+  }
+  return icon.iconResponse(size)
+}
+
+module.exports = { pageResponse, currentResponse, manifestResponse, iconResponse }

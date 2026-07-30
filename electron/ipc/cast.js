@@ -58,6 +58,10 @@ function ensureMediaServer() {
       if (url === '/viewer.webmanifest' && req.method === 'GET') {
         return sendViewerResponse(res, viewer.manifestResponse())
       }
+      const iconMatch = /^\/viewer-icon-(\d+)\.png$/.exec(url)
+      if (iconMatch && req.method === 'GET') {
+        return sendViewerResponse(res, viewer.iconResponse(Number(iconMatch[1])))
+      }
       if (url === '/api/cast/current' && req.method === 'GET') {
         return sendViewerResponse(res, viewer.currentResponse(req.headers['if-none-match']))
       }
