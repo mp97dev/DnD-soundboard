@@ -45,6 +45,7 @@ module.exports = function registerConfigIpc() {
     })
     if (canceled || !filePath) return false
 
+    const index = readJson(LIBRARY_INDEX, { version: 1, tracks: [] })
     const bundle = {
       type: EXPORT_TYPE,
       version: 1,
@@ -52,7 +53,11 @@ module.exports = function registerConfigIpc() {
       settings: readJson(SETTINGS_FILE, DEFAULT_SETTINGS),
       boards: listBoards(),
       // Solo le tracce utente: le builtin non stanno in index.json
-      library: readJson(LIBRARY_INDEX, { version: 1, tracks: [] }).tracks
+      library: index.tracks,
+      // Le cartelle viaggiano col bundle: senza, le tracce arriverebbero con i
+      // loro folderIds ma senza l'albero a cui puntano, e la divisione per
+      // campagna si perderebbe sul PC di destinazione.
+      libraryFolders: index.folders || []
     }
     writeJson(filePath, bundle)
     return true
@@ -77,15 +82,26 @@ module.exports = function registerConfigIpc() {
     }
 
     // Libreria: merge per id, la traccia importata ha precedenza
-    const existing = readJson(LIBRARY_INDEX, { version: 1, tracks: [] }).tracks
-    const byId = new Map(existing.map((t) => [t.id, t]))
+    const index = readJson(LIBRARY_INDEX, { version: 1, tracks: [] })
+    const byId = new Map(index.tracks.map((t) => [t.id, t]))
     let addedTracks = 0
     for (const t of bundle.library || []) {
       if (!t?.id) continue
       if (!byId.has(t.id)) addedTracks++
       byId.set(t.id, t)
     }
-    writeJson(LIBRARY_INDEX, { version: 1, tracks: [...byId.values()] })
+    // Stesso merge per le cartelle. Un bundle vecchio (senza libraryFolders)
+    // non deve azzerare l'albero già presente su questo PC.
+    const foldersById = new Map((index.folders || []).map((f) => [f.id, f]))
+    for (const f of bundle.libraryFolders || []) {
+      if (!f?.id) continue
+      foldersById.set(f.id, f)
+    }
+    writeJson(LIBRARY_INDEX, {
+      version: 1,
+      folders: [...foldersById.values()],
+      tracks: [...byId.values()]
+    })
 
     // Board: una per file, sovrascritte per id
     let importedBoards = 0

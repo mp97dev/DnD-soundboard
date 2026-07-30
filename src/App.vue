@@ -217,8 +217,14 @@ async function importConfig() {
 
 <style scoped>
 .app { display: flex; flex-direction: column; height: 100%; }
+/* La barra va a capo invece di tagliare. Senza flex-wrap i comandi in fondo
+   escono dal bordo e spariscono: html ha overflow:hidden, quindi non c'è
+   nemmeno una barra di scorrimento per raggiungerli. Misurato a 1100px di
+   finestra: 16px di troppo e Play/Edit entrambi oltre il bordo, cioè non si
+   può più tornare in riproduzione. L'inglese e i nomi di board lunghi
+   stringono ancora di più. */
 .toolbar {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
   padding: 10px 14px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
@@ -229,10 +235,14 @@ async function importConfig() {
 .cast-error { color: var(--danger); }
 .cast { display: flex; align-items: center; gap: 6px; }
 .cast select { max-width: 160px; }
-.master { display: flex; align-items: center; gap: 8px; }
+.master { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .dim { color: var(--text-dim); font-size: 13px; }
-.mode-switch { display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-.mode-switch button { border: none; border-radius: 0; }
+/* Stop All e Play/Edit non si stringono: sono i comandi che servono subito
+   quando qualcosa va storto in sessione, e un bottone schiacciato a mezza
+   parola è peggio di uno andato a capo. */
+.toolbar .danger { flex-shrink: 0; white-space: nowrap; }
+.mode-switch { display: flex; gap: 0; flex-shrink: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.mode-switch button { border: none; border-radius: 0; white-space: nowrap; }
 .mode-switch button.active { background: var(--accent); color: var(--on-accent); }
 .content { flex: 1; min-height: 0; }
 .empty { display: grid; place-items: center; height: 100%; color: var(--text-dim); }

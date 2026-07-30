@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
-import { useLibraryStore } from '../stores/library'
+import { useLibraryStore, UNFILED } from '../stores/library'
 import { mediaUrl } from '../media'
 import { rt, t, tm } from '../i18n'
 
@@ -21,6 +21,124 @@ const knownTags = computed(() => [
 const filterTags = computed(() =>
   [...new Set([...library.allTags, ...library.tagFilter])].sort((a, b) => a.localeCompare(b))
 )
+
+// ---- Albero delle cartelle ----
+// Disegnato come lista piatta con rientro invece che con un componente
+// ricorsivo: la sidebar parte da 200px, e a quella larghezza l'unica cosa che
+// serve davvero della gerarchia è qualche pixel di indentazione.
+// Le cartelle richiuse stanno in localStorage come la larghezza della sidebar:
+// è stato di questa finestra, non della libreria.
+const LS_COLLAPSED = 'libraryFoldersCollapsed'
+const collapsedFolders = reactive(new Set(JSON.parse(localStorage[LS_COLLAPSED] || '[]')))
+function toggleFolder(id) {
+  if (collapsedFolders.has(id)) collapsedFolders.delete(id)
+  else collapsedFolders.add(id)
+  localStorage[LS_COLLAPSED] = JSON.stringify([...collapsedFolders])
+}
+
+// respectCollapse=false serve alla tendina "aggiungi a cartella" dell'editor,
+// che deve elencare tutte le cartelle anche se il ramo è chiuso nell'albero.
+function flattenFolders(respectCollapse) {
+  const rows = []
+  const walk = (parentId, depth) => {
+    for (const f of library.childFolders(parentId)) {
+      const children = library.childFolders(f.id)
+      rows.push({ folder: f, depth, hasChildren: children.length > 0 })
+      if (!respectCollapse || !collapsedFolders.has(f.id)) walk(f.id, depth + 1)
+    }
+  }
+  walk(null, 0)
+  return rows
+}
+const folderRows = computed(() => flattenFolders(true))
+const allFolderRows = computed(() => flattenFolders(false))
+
+// Colore di partenza del selettore per una cartella che non ne ha ancora uno.
+// Il colore scelto è un DATO salvato in index.json e applicato con :style, ma
+// il valore PROPOSTO si legge da --accent del tema acceso invece di fissarlo:
+// con un esadecimale cablato, su giorno e su notturno il picker proporrebbe
+// l'ottone di candela, cioè un colore che in quel tema non esiste. Il fallback
+// serve solo se --accent non è un #rrggbb, perché <input type="color"> non
+// accetta altro.
+function defaultFolderColor() {
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()
+  return /^#[0-9a-f]{6}$/i.test(v) ? v : '#c9922f'
+}
+
+// Un solo stato per volta fra creazione, rinomina e conferma di eliminazione:
+// sono tre modi di modificare la stessa riga, e tenerli separati vorrebbe dire
+// poterli aprire tutti insieme sulla stessa cartella.
+const folderEdit = ref(null) // { mode:'create'|'rename'|'delete', id, name } | null
+const folderMsg = ref(null)
+let msgTimer = null
+function showFolderMsg(msg) {
+  folderMsg.value = msg
+  clearTimeout(msgTimer)
+  msgTimer = setTimeout(() => (folderMsg.value = null), 4000)
+}
+onBeforeUnmount(() => clearTimeout(msgTimer))
+
+function startCreateFolder(parentId) {
+  folderEdit.value = { mode: 'create', id: parentId || null, name: '' }
+}
+function startRenameFolder(f) {
+  folderEdit.value = { mode: 'rename', id: f.id, name: f.name }
+}
+function askDeleteFolder(f) {
+  folderEdit.value = { mode: 'delete', id: f.id, name: f.name }
+}
+function cancelFolderEdit() {
+  folderEdit.value = null
+}
+async function commitFolderEdit() {
+  const e = folderEdit.value
+  if (!e) return
+  const name = e.name.trim()
+  if (!name) return cancelFolderEdit()
+  if (e.mode === 'create') await library.createFolder(name, e.id)
+  else await library.renameFolder(e.id, name)
+  folderEdit.value = null
+}
+async function confirmDeleteFolder() {
+  await library.deleteFolder(folderEdit.value.id)
+  folderEdit.value = null
+}
+
+// ---- Trascinamenti sull'albero ----
+// Una traccia trascinata su una cartella ci viene AGGIUNTA, non spostata: una
+// traccia può stare in più campagne insieme, e "sposta" implicherebbe toglierla
+// da dove sta già. Il tipo application/x-track-id è lo stesso che legge la
+// griglia di EditMode: la stessa traccia si trascina sui bottoni o qui.
+//
+// Cartella evidenziata sotto il puntatore: 'root' e non null perché "nessun
+// bersaglio" e "la radice" sono due cose diverse da disegnare.
+const dropTarget = ref(null)
+const TRACK_TYPE = 'application/x-track-id'
+const FOLDER_TYPE = 'application/x-folder-id'
+function onFolderDragOver(e, folderId) {
+  const types = [...e.dataTransfer.types]
+  const track = types.includes(TRACK_TYPE)
+  const folder = types.includes(FOLDER_TYPE)
+  // Sulla radice ("tutta la libreria") si possono lasciare solo cartelle:
+  // una traccia non appartiene a niente per definizione
+  if (!folder && (!track || folderId === null)) return
+  e.preventDefault()
+  e.dataTransfer.dropEffect = folder ? 'move' : 'copy'
+  dropTarget.value = folderId || 'root'
+}
+async function onFolderDrop(e, folderId) {
+  dropTarget.value = null
+  const trackId = e.dataTransfer.getData(TRACK_TYPE)
+  if (trackId && folderId) return library.addTrackToFolder(trackId, folderId)
+  const movedId = e.dataTransfer.getData(FOLDER_TYPE)
+  if (!movedId || movedId === folderId) return
+  const ok = await library.moveFolder(movedId, folderId)
+  if (!ok) showFolderMsg(t('library.folders.moveRefused'))
+}
+function onFolderDragStart(e, f) {
+  e.dataTransfer.setData(FOLDER_TYPE, f.id)
+  e.dataTransfer.effectAllowed = 'move'
+}
 
 // ---- Anteprima audio: un solo elemento condiviso, un solo player attivo ----
 const previewId = ref(null)
@@ -52,9 +170,25 @@ onBeforeUnmount(stopPreview)
 // muoiono insieme. Con quattro ref separate le regole di reset erano già
 // divergenti — cancelEdit ne azzerava due su quattro, e salvare passava dal
 // solito azzeramento due volte.
-const edit = ref(null) // { id, title, tags, tagInput } | null
+const edit = ref(null) // { id, title, tags, tagInput, folderIds } | null
 function startEdit(t) {
-  edit.value = { id: t.id, title: t.title, tags: t.tags ? [...t.tags] : [], tagInput: '' }
+  edit.value = {
+    id: t.id,
+    title: t.title,
+    tags: t.tags ? [...t.tags] : [],
+    tagInput: '',
+    // Solo le cartelle che esistono davvero: un id orfano rimasto su una
+    // traccia non deve tornare su disco solo perché si è aperto l'editor
+    folderIds: library.trackFolderIds(t)
+  }
+}
+function addEditFolder(e) {
+  const id = e.target.value
+  e.target.value = ''
+  if (id && !edit.value.folderIds.includes(id)) edit.value.folderIds.push(id)
+}
+function removeEditFolder(id) {
+  edit.value.folderIds = edit.value.folderIds.filter((f) => f !== id)
 }
 function cancelEdit() {
   edit.value = null
@@ -80,7 +214,11 @@ function removeEditTag(tag) {
 }
 function saveEdit(t) {
   commitTagInput()
-  library.updateTrack(t.id, { title: edit.value.title.trim() || t.title, tags: edit.value.tags })
+  library.updateTrack(t.id, {
+    title: edit.value.title.trim() || t.title,
+    tags: edit.value.tags,
+    folderIds: edit.value.folderIds
+  })
   cancelEdit()
 }
 
@@ -188,6 +326,133 @@ function onDragStart(e, track) {
 
     <input v-model="library.search" :placeholder="$t('library.searchPlaceholder')" class="search" />
 
+    <div class="folders">
+      <h4 class="folders-head">
+        {{ $t('library.folders.title') }}
+        <button
+          class="row-btn"
+          :title="$t('library.folders.new')"
+          :aria-label="$t('library.folders.new')"
+          @click="startCreateFolder(null)"
+        >＋</button>
+      </h4>
+      <div class="folder-list">
+        <div
+          class="folder-row"
+          :class="{ active: library.selectedFolderId === null, over: dropTarget === 'root' }"
+          @click="library.selectFolder(null)"
+          @dragover="onFolderDragOver($event, null)"
+          @dragleave="dropTarget = null"
+          @drop.prevent="onFolderDrop($event, null)"
+        >
+          <span class="chev" />
+          <span class="folder-name">{{ $t('library.folders.all') }}</span>
+          <span class="folder-count">{{ library.tracks.length }}</span>
+        </div>
+
+        <template v-for="row in folderRows" :key="row.folder.id">
+          <div
+            class="folder-row"
+            :class="{ active: library.selectedFolderId === row.folder.id, over: dropTarget === row.folder.id }"
+            :style="{ paddingLeft: 4 + row.depth * 12 + 'px' }"
+            :draggable="folderEdit?.mode !== 'rename' || folderEdit.id !== row.folder.id"
+            :title="$t('library.folders.dropHint', { name: row.folder.name })"
+            @click="library.selectFolder(row.folder.id)"
+            @dragstart.stop="onFolderDragStart($event, row.folder)"
+            @dragover="onFolderDragOver($event, row.folder.id)"
+            @dragleave="dropTarget = null"
+            @drop.prevent="onFolderDrop($event, row.folder.id)"
+          >
+            <span
+              class="chev"
+              :title="collapsedFolders.has(row.folder.id) ? $t('library.folders.expand') : $t('library.folders.collapse')"
+              @click.stop="row.hasChildren && toggleFolder(row.folder.id)"
+            >{{ row.hasChildren ? (collapsedFolders.has(row.folder.id) ? '▸' : '▾') : '' }}</span>
+            <span class="folder-dot" :style="row.folder.color ? { background: row.folder.color } : undefined" />
+            <input
+              v-if="folderEdit?.mode === 'rename' && folderEdit.id === row.folder.id"
+              v-model="folderEdit.name"
+              class="folder-input"
+              :placeholder="$t('library.folders.namePlaceholder')"
+              @click.stop
+              @keydown.enter.prevent="commitFolderEdit"
+              @keydown.esc.prevent="cancelFolderEdit"
+              @blur="commitFolderEdit"
+            />
+            <span v-else class="folder-name">{{ row.folder.name }}</span>
+            <span class="folder-actions" @click.stop>
+              <input
+                type="color"
+                class="folder-color"
+                :title="$t('library.folders.color')"
+                :value="row.folder.color || defaultFolderColor()"
+                @change="library.setFolderColor(row.folder.id, $event.target.value)"
+              />
+              <button class="row-btn" :title="$t('library.folders.newChild')" @click="startCreateFolder(row.folder.id)">＋</button>
+              <button class="row-btn" :title="$t('library.folders.rename')" @click="startRenameFolder(row.folder)">✏️</button>
+              <button class="row-btn" :title="$t('library.folders.delete')" @click="askDeleteFolder(row.folder)">🗑</button>
+            </span>
+            <span class="folder-count">{{ library.folderTrackCount(row.folder.id) }}</span>
+          </div>
+          <div
+            v-if="folderEdit?.mode === 'delete' && folderEdit.id === row.folder.id"
+            class="folder-confirm bulk-confirm"
+          >
+            <p class="bulk-msg">{{ $t('library.folders.deleteConfirm', { name: row.folder.name }) }}</p>
+            <div class="bulk-btns">
+              <button class="primary" @click="confirmDeleteFolder">{{ $t('library.folders.delete') }}</button>
+              <button @click="cancelFolderEdit">{{ $t('library.cancel') }}</button>
+            </div>
+          </div>
+          <input
+            v-if="folderEdit?.mode === 'create' && folderEdit.id === row.folder.id"
+            v-model="folderEdit.name"
+            class="folder-input new-child"
+            :style="{ marginLeft: 16 + row.depth * 12 + 'px' }"
+            :placeholder="$t('library.folders.namePlaceholder')"
+            @keydown.enter.prevent="commitFolderEdit"
+            @keydown.esc.prevent="cancelFolderEdit"
+            @blur="commitFolderEdit"
+          />
+        </template>
+
+        <div
+          class="folder-row"
+          :class="{ active: library.selectedFolderId === UNFILED }"
+          @click="library.selectFolder(UNFILED)"
+        >
+          <span class="chev" />
+          <span class="folder-name">{{ $t('library.folders.unfiled') }}</span>
+          <span class="folder-count">{{ library.unfiledCount }}</span>
+        </div>
+
+        <input
+          v-if="folderEdit?.mode === 'create' && !folderEdit.id"
+          v-model="folderEdit.name"
+          class="folder-input"
+          :placeholder="$t('library.folders.namePlaceholder')"
+          @keydown.enter.prevent="commitFolderEdit"
+          @keydown.esc.prevent="cancelFolderEdit"
+          @blur="commitFolderEdit"
+        />
+        <p v-else-if="!library.folders.length" class="dim">{{ $t('library.folders.empty') }}</p>
+      </div>
+      <p v-if="folderMsg" class="error">{{ folderMsg }}</p>
+    </div>
+
+    <div v-if="filterTags.length" class="tag-mode" :title="$t('library.tagMatch.hint')">
+      <span class="dim">{{ $t('library.tagMatch.label') }}</span>
+      <button
+        class="mode-btn"
+        :class="{ active: library.tagMatchMode === 'all' }"
+        @click="library.setTagMatchMode('all')"
+      >{{ $t('library.tagMatch.all') }}</button>
+      <button
+        class="mode-btn"
+        :class="{ active: library.tagMatchMode === 'any' }"
+        @click="library.setTagMatchMode('any')"
+      >{{ $t('library.tagMatch.any') }}</button>
+    </div>
     <div v-if="filterTags.length" class="tag-filters">
       <span
         v-for="tag in filterTags"
@@ -354,6 +619,27 @@ function onDragStart(e, track) {
                   @keydown="onTagInputKeydown"
                 />
               </div>
+              <!-- Le cartelle della traccia: qui si tolgono, dall'albero si
+                   aggiungono anche col trascinamento. Una traccia può stare in
+                   più cartelle, quindi sono chip e non una tendina sola. -->
+              <div v-if="library.folders.length" class="edit-tags">
+                <span v-for="fid in edit.folderIds" :key="fid" class="tag-chip editing">
+                  {{ library.folderById(fid)?.name }}
+                  <span
+                    class="tag-remove"
+                    :title="$t('library.folders.removeFrom')"
+                    @click="removeEditFolder(fid)"
+                  >×</span>
+                </span>
+                <select class="folder-add" @change="addEditFolder">
+                  <option value="">{{ $t('library.folders.addTo') }}</option>
+                  <option
+                    v-for="row in allFolderRows"
+                    :key="row.folder.id"
+                    :value="row.folder.id"
+                  >{{ '· '.repeat(row.depth) + row.folder.name }}</option>
+                </select>
+              </div>
               <div class="bulk-btns">
                 <button class="primary" @click="saveEdit(t)">{{ $t('library.save') }}</button>
                 <button @click="cancelEdit">{{ $t('library.cancel') }}</button>
@@ -399,6 +685,47 @@ h4 { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; color: var(-
   max-height: 72px; overflow-y: auto;
   font-size: 11px;
 }
+.tag-mode { display: flex; align-items: center; gap: 4px; font-size: 11px; }
+.mode-btn {
+  padding: 1px 6px; font-size: 11px;
+  border-radius: 10px; border: 1px solid var(--border);
+  background: var(--bg-raised); color: var(--text-dim);
+  cursor: pointer;
+}
+.mode-btn.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+/* ---- Albero delle cartelle ---- */
+.folders { display: flex; flex-direction: column; }
+.folders-head { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+/* Tetto all'altezza: con dieci campagne l'albero spingerebbe fuori schermo la
+   libreria vera, che è la parte che si usa di più */
+.folder-list { max-height: 220px; overflow-y: auto; }
+.folder-row {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px; border-radius: 6px;
+  font-size: 13px; cursor: pointer; user-select: none;
+}
+.folder-row:hover { background: var(--hover); }
+.folder-row.active { background: var(--accent); color: var(--on-accent); }
+/* Bersaglio del trascinamento: deve leggersi anche sopra .active */
+.folder-row.over { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.folder-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-count { flex-shrink: 0; font-size: 11px; opacity: 0.7; font-variant-numeric: tabular-nums; }
+.folder-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background: var(--border);
+}
+/* A 200px di sidebar quattro icone e il nome non ci stanno: le azioni
+   compaiono all'hover, come sulle righe delle tracce */
+.folder-actions { display: flex; align-items: center; gap: 1px; flex-shrink: 0; visibility: hidden; }
+.folder-row:hover .folder-actions { visibility: visible; }
+.folder-color {
+  width: 16px; height: 16px; padding: 0;
+  border: none; background: none; cursor: pointer;
+}
+.folder-input { width: 100%; font-size: 12px; }
+.folder-input.new-child { width: auto; }
+.folder-confirm { margin: 4px 0; }
+.folder-add { font-size: 11px; max-width: 100%; }
 .tag-chip {
   padding: 2px 7px;
   border-radius: 10px;

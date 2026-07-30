@@ -51,6 +51,39 @@ function deleteBoard(id) {
 }
 
 // ---- Library ----
+// Cartelle: stesse regole della versione Electron (electron/ipc/filesystem.js).
+// L'appartenenza è multipla e sta sulla traccia (folderIds); l'albero è una
+// lista di nodi { id, name, parentId, color } e nessun file si sposta.
+function normalizeFolders(raw) {
+  const list = (Array.isArray(raw) ? raw : [])
+    .filter((f) => f && typeof f.id === 'string')
+    .map((f) => ({
+      id: f.id,
+      name: typeof f.name === 'string' ? f.name : '',
+      parentId: typeof f.parentId === 'string' ? f.parentId : null,
+      color: typeof f.color === 'string' ? f.color : null
+    }))
+  const byId = new Map(list.map((f) => [f.id, f]))
+  // Parent morto o ciclo: la cartella tornerebbe irraggiungibile nell'albero,
+  // la si riporta alla radice invece di perderla.
+  for (const f of list) {
+    if (f.parentId && !byId.has(f.parentId)) f.parentId = null
+  }
+  for (const f of list) {
+    const seen = new Set([f.id])
+    let p = f.parentId
+    while (p) {
+      if (seen.has(p)) {
+        f.parentId = null
+        break
+      }
+      seen.add(p)
+      p = byId.get(p) ? byId.get(p).parentId : null
+    }
+  }
+  return list
+}
+
 function listLibrary() {
   const index = readJson(LIBRARY_INDEX, { version: 1, tracks: [] })
   const builtinIndex = readJson(BUILTIN_TRACKS_FILE, { version: 1, tracks: [] })
@@ -64,13 +97,20 @@ function listLibrary() {
   all.forEach((t) => {
     const p = t.audioPath || t.mediaPath
     t.missing = !p || !fs.existsSync(path.join(DATA_DIR, ...p.split('/')))
+    // Migrazione additiva degli indici scritti prima delle cartelle
+    if (!Array.isArray(t.folderIds)) t.folderIds = []
   })
-  return all
+  return { tracks: all, folders: normalizeFolders(index.folders) }
 }
 
-function saveLibrary(tracks) {
+function saveLibrary(payload) {
+  // Un array nudo è la forma vecchia: non deve cancellare l'albero su disco
+  const tracks = Array.isArray(payload) ? payload : (payload && payload.tracks) || []
+  const folders = !Array.isArray(payload) && payload && Array.isArray(payload.folders)
+    ? payload.folders
+    : readJson(LIBRARY_INDEX, {}).folders
   const clean = tracks.filter((t) => !t.builtin).map(({ missing, builtin, ...t }) => t)
-  writeJson(LIBRARY_INDEX, { version: 1, tracks: clean })
+  writeJson(LIBRARY_INDEX, { version: 1, folders: normalizeFolders(folders), tracks: clean })
   return true
 }
 
@@ -110,13 +150,17 @@ function saveSettings(s) {
 
 // ---- Export / Import ----
 function exportBundle() {
+  const index = readJson(LIBRARY_INDEX, { version: 1, tracks: [] })
   return {
     type: EXPORT_TYPE,
     version: 1,
     exportedAt: new Date().toISOString(),
     settings: getSettings(),
     boards: listBoards(),
-    library: readJson(LIBRARY_INDEX, { version: 1, tracks: [] }).tracks
+    library: index.tracks,
+    // Senza l'albero le tracce importate arriverebbero con folderIds che non
+    // puntano a niente: la divisione per campagna si perderebbe nel passaggio
+    libraryFolders: index.folders || []
   }
 }
 
@@ -126,15 +170,25 @@ function importBundle(bundle) {
   }
   if (bundle.settings) saveSettings(bundle.settings)
 
-  const existing = readJson(LIBRARY_INDEX, { version: 1, tracks: [] }).tracks
-  const byId = new Map(existing.map((t) => [t.id, t]))
+  const index = readJson(LIBRARY_INDEX, { version: 1, tracks: [] })
+  const byId = new Map(index.tracks.map((t) => [t.id, t]))
   let addedTracks = 0
   for (const t of bundle.library || []) {
     if (!t?.id) continue
     if (!byId.has(t.id)) addedTracks++
     byId.set(t.id, t)
   }
-  writeJson(LIBRARY_INDEX, { version: 1, tracks: [...byId.values()] })
+  // Merge anche delle cartelle: un bundle vecchio non azzera l'albero locale
+  const foldersById = new Map((index.folders || []).map((f) => [f.id, f]))
+  for (const f of bundle.libraryFolders || []) {
+    if (!f?.id) continue
+    foldersById.set(f.id, f)
+  }
+  writeJson(LIBRARY_INDEX, {
+    version: 1,
+    folders: [...foldersById.values()],
+    tracks: [...byId.values()]
+  })
 
   let boards = 0
   for (const b of bundle.boards || []) {

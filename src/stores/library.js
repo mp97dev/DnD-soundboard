@@ -10,6 +10,28 @@ const MAX_CONCURRENT = 3
 const uid = () => Math.random().toString(36).slice(2, 10)
 const clone = (v) => JSON.parse(JSON.stringify(v))
 
+// ---- Cartelle ----
+// L'appartenenza è MULTIPLA: la stessa traccia può stare in più cartelle
+// (folderIds sulla traccia, come i tag). È il modello delle playlist, non
+// quello delle directory, perché il caso d'uso è tenere separate le campagne e
+// poi riusarne pezzi in una terza: la traccia condivisa sta davvero in
+// entrambe, senza copie di file e senza dover decidere di chi "è".
+// I tag restano ortogonali: un filtro su 'combattimento' attraversa le cartelle.
+
+// Sentinella del filtro "Senza cartella": non è uno stato scritto sulla
+// traccia, è il complemento di "sta in almeno una cartella". uid() produce 8
+// caratteri base36, quindi non può collidere con l'id di una cartella vera.
+export const UNFILED = '__unfiled__'
+
+// Stato di vista (cartella scelta, modo di confronto dei tag): localStorage,
+// come la larghezza della sidebar. Non in index.json e non in settings.json —
+// è di questo PC, non della libreria, e non deve viaggiare negli export.
+const LS_FOLDER = 'librarySelectedFolder'
+const LS_TAG_MODE = 'libraryTagMatchMode'
+// Fuori dal browser (test headless dei getter) localStorage non esiste: lo
+// stato della vista non deve impedire allo store di essere creato.
+const ls = typeof localStorage === 'undefined' ? null : localStorage
+
 // I tag suggeriti per il primo utilizzo stanno nei cataloghi
 // (library.tagSuggestions): sono testo di interfaccia e cambiano con la lingua.
 // I tag già scritti sulle tracce invece NON si toccano — sono dati dell'utente,
@@ -20,9 +42,17 @@ const clone = (v) => JSON.parse(JSON.stringify(v))
 export const useLibraryStore = defineStore('library', {
   state: () => ({
     tracks: [],
+    // Albero delle cartelle: { id, name, parentId, color }
+    folders: [],
     search: '',
-    // Tag selezionati per filtrare la libreria (AND fra tutti quelli attivi)
+    // Tag selezionati per filtrare la libreria
     tagFilter: [],
+    // Come si combinano i tag selezionati: 'all' = la traccia li ha tutti
+    // (comportamento storico), 'any' = ne basta uno
+    tagMatchMode: ls && ls.getItem(LS_TAG_MODE) === 'any' ? 'any' : 'all',
+    // Cartella selezionata: null = tutta la libreria, UNFILED = solo le tracce
+    // che non stanno in nessuna cartella
+    selectedFolderId: (ls && ls.getItem(LS_FOLDER)) || null,
     // Coda di download. Ogni job:
     // { id, kind:'download'|'redownload', url, ytId, trackId, title,
     //   status:'queued'|'active'|'error', phase, percent, error }
@@ -47,7 +77,50 @@ export const useLibraryStore = defineStore('library', {
     missingLocal: (s) => s.tracks.filter((t) => t.missing && t.source?.type !== 'youtube'),
     // Almeno un download in coda o in corso
     downloading: (s) => s.jobs.some((j) => j.status === 'queued' || j.status === 'active'),
-    filtered: (s) => {
+    // ---- Cartelle ----
+    folderById: (s) => (id) => s.folders.find((f) => f.id === id),
+    // Id delle cartelle che esistono davvero, per ignorare i riferimenti orfani
+    knownFolderIds: (s) => new Set(s.folders.map((f) => f.id)),
+    // Figlie dirette (parentId null = radici), in ordine alfabetico
+    childFolders: (s) => (parentId) =>
+      s.folders
+        .filter((f) => (f.parentId || null) === (parentId || null))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    // Una cartella PIÙ tutta la sua discendenza. Selezionare una campagna deve
+    // mostrare anche quello che sta nelle sue sotto-cartelle: chi ha diviso
+    // "Campagna 1" in "combattimenti" e "taverne" si aspetta di rivedere tutto
+    // insieme scegliendo la campagna, non una lista vuota. Il Set fa anche da
+    // guardia contro i cicli, se un index.json arriva già rotto da fuori.
+    folderWithDescendants: (s) => (id) => {
+      const out = new Set()
+      const walk = (fid) => {
+        if (!fid || out.has(fid)) return
+        out.add(fid)
+        for (const f of s.folders) if (f.parentId === fid) walk(f.id)
+      }
+      walk(id)
+      return out
+    },
+    // Le cartelle a cui una traccia appartiene DAVVERO: un id orfano (cartella
+    // cancellata altrove, bundle importato a metà) non deve contare, altrimenti
+    // la traccia sparirebbe sia dalle cartelle sia da "Senza cartella".
+    trackFolderIds() {
+      return (t) => (t.folderIds || []).filter((id) => this.knownFolderIds.has(id))
+    },
+    // Conteggio per cartella: include le discendenti, così il numero è quello
+    // che si vede selezionandola. Volutamente sul totale della libreria e non
+    // su `filtered`: un conteggio che balla mentre si scrive nella ricerca non
+    // dice più quanto c'è dentro la cartella.
+    folderTrackCount() {
+      return (id) => {
+        const wanted = this.folderWithDescendants(id)
+        return this.tracks.filter((t) => (t.folderIds || []).some((fid) => wanted.has(fid))).length
+      }
+    },
+    unfiledCount() {
+      return this.tracks.filter((t) => !this.trackFolderIds(t).length).length
+    },
+    filtered(s) {
       const q = s.search.trim().toLowerCase()
       let list = q
         ? s.tracks.filter(
@@ -56,8 +129,21 @@ export const useLibraryStore = defineStore('library', {
               (t.tags || []).some((tag) => tag.toLowerCase().includes(q))
           )
         : s.tracks
+      // Cartella e tag sono filtri indipendenti che si sommano alla ricerca.
+      // null = tutta la libreria; una cartella scelta include sempre le sue
+      // discendenti; UNFILED è l'esatto complemento delle cartelle esistenti.
+      if (s.selectedFolderId === UNFILED) {
+        list = list.filter((t) => !this.trackFolderIds(t).length)
+      } else if (s.selectedFolderId) {
+        const wanted = this.folderWithDescendants(s.selectedFolderId)
+        list = list.filter((t) => (t.folderIds || []).some((id) => wanted.has(id)))
+      }
       if (s.tagFilter.length) {
-        list = list.filter((t) => s.tagFilter.every((tag) => (t.tags || []).includes(tag)))
+        // 'any' è quello che serve per pescare 'combattimento' da tutte le
+        // campagne insieme; 'all' per stringere su una traccia precisa.
+        list = s.tagMatchMode === 'any'
+          ? list.filter((t) => s.tagFilter.some((tag) => (t.tags || []).includes(tag)))
+          : list.filter((t) => s.tagFilter.every((tag) => (t.tags || []).includes(tag)))
       }
       return list
     },
@@ -79,12 +165,26 @@ export const useLibraryStore = defineStore('library', {
           }
         })
       }
-      this.tracks = await window.api.library.list()
+      const res = await window.api.library.list()
+      // Forma nuova { tracks, folders }; un array nudo è un backend più
+      // indietro (server web non aggiornato) e vale come "nessuna cartella"
+      this.tracks = Array.isArray(res) ? res : res.tracks || []
+      this.folders = Array.isArray(res) ? [] : res.folders || []
+      // Una cartella selezionata che non esiste più (cancellata su un altro PC,
+      // libreria sostituita da un import) lascerebbe la libreria vuota senza un
+      // modo ovvio di sbloccarla: si torna a "tutte".
+      if (
+        this.selectedFolderId &&
+        this.selectedFolderId !== UNFILED &&
+        !this.folderById(this.selectedFolderId)
+      ) {
+        this.selectFolder(null)
+      }
     },
     async persist() {
       // I Proxy reattivi non attraversano il contextBridge (structured clone):
       // serializzazione esplicita prima di ogni chiamata IPC con dati dello store
-      await window.api.library.save(clone(this.tracks))
+      await window.api.library.save({ tracks: clone(this.tracks), folders: clone(this.folders) })
     },
 
     // ---- Coda di download ----
@@ -112,7 +212,10 @@ export const useLibraryStore = defineStore('library', {
             ? window.api.ytdlp.downloadVisual
             : window.api.ytdlp.download
           const track = await dl(job.url, job.id)
-          if (!this.byId(track.id)) this.tracks.push(track)
+          if (!this.byId(track.id)) {
+            this._fileNewTracks([track])
+            this.tracks.push(track)
+          }
           await this.persist()
         }
         // Successo: il job sparisce dalla lista
@@ -222,6 +325,7 @@ export const useLibraryStore = defineStore('library', {
       this.importing = true
       try {
         const newTracks = await window.api.library.importLocal()
+        this._fileNewTracks(newTracks)
         this.tracks.push(...newTracks)
         if (newTracks.length) await this.persist()
       } finally {
@@ -232,6 +336,7 @@ export const useLibraryStore = defineStore('library', {
       this.importing = true
       try {
         const newTracks = await window.api.library.importLocalVisual()
+        this._fileNewTracks(newTracks)
         this.tracks.push(...newTracks)
         if (newTracks.length) await this.persist()
       } finally {
@@ -243,6 +348,102 @@ export const useLibraryStore = defineStore('library', {
       const i = this.tagFilter.indexOf(tag)
       if (i === -1) this.tagFilter.push(tag)
       else this.tagFilter.splice(i, 1)
+    },
+    setTagMatchMode(mode) {
+      this.tagMatchMode = mode === 'any' ? 'any' : 'all'
+      if (ls) ls.setItem(LS_TAG_MODE, this.tagMatchMode)
+    },
+
+    // ---- Cartelle ----
+    selectFolder(id) {
+      this.selectedFolderId = id || null
+      if (!ls) return
+      if (this.selectedFolderId) ls.setItem(LS_FOLDER, this.selectedFolderId)
+      else ls.removeItem(LS_FOLDER)
+    },
+    async createFolder(name, parentId = null) {
+      const folder = {
+        id: uid(),
+        name: String(name || '').trim(),
+        parentId: parentId || null,
+        color: null
+      }
+      this.folders.push(folder)
+      await this.persist()
+      return folder.id
+    },
+    async renameFolder(id, name) {
+      const f = this.folderById(id)
+      const next = String(name || '').trim()
+      if (!f || !next) return
+      f.name = next
+      await this.persist()
+    },
+    async setFolderColor(id, color) {
+      const f = this.folderById(id)
+      if (!f) return
+      f.color = color || null
+      await this.persist()
+    },
+    // Sposta una cartella sotto un'altra. Rifiuta se la destinazione è la
+    // cartella stessa o una sua discendente: il ramo si staccherebbe dalla
+    // radice e resterebbe in un ciclo, invisibile nell'albero e quindi non più
+    // né selezionabile né cancellabile dalla UI.
+    async moveFolder(id, parentId) {
+      const f = this.folderById(id)
+      if (!f) return false
+      const target = parentId || null
+      if (target && (target === id || !this.folderById(target))) return false
+      if (target && this.folderWithDescendants(id).has(target)) return false
+      f.parentId = target
+      await this.persist()
+      return true
+    },
+    // Cancellare una cartella NON cancella tracce: sparisce il contenitore, non
+    // il contenuto — i file su disco non si toccano mai. Le figlie salgono al
+    // genitore della cancellata invece di sparire con lei: perdere un ramo
+    // intero per un click su una cartella di mezzo sarebbe una perdita
+    // silenziosa di lavoro.
+    async deleteFolder(id) {
+      const f = this.folderById(id)
+      if (!f) return
+      const parent = f.parentId || null
+      this.folders = this.folders.filter((x) => x.id !== id)
+      for (const child of this.folders) if (child.parentId === id) child.parentId = parent
+      for (const t of this.tracks) {
+        if (Array.isArray(t.folderIds) && t.folderIds.includes(id)) {
+          t.folderIds = t.folderIds.filter((x) => x !== id)
+        }
+      }
+      if (this.selectedFolderId === id) this.selectFolder(null)
+      await this.persist()
+    },
+    // Mette una traccia in una cartella (AGGIUNGE, non sposta: può stare in più
+    // cartelle insieme). Passa da updateTrack perché è lì che una traccia
+    // builtin diventa una copia utente: scrivendo folderIds direttamente,
+    // l'appartenenza finirebbe su un oggetto che library:save scarta e
+    // sparirebbe al riavvio.
+    async addTrackToFolder(trackId, folderId) {
+      const t = this.byId(trackId)
+      if (!t || !this.folderById(folderId)) return
+      const ids = t.folderIds || []
+      if (ids.includes(folderId)) return
+      await this.updateTrack(trackId, { folderIds: [...ids, folderId] })
+    },
+    async removeTrackFromFolder(trackId, folderId) {
+      const t = this.byId(trackId)
+      if (!t) return
+      await this.updateTrack(trackId, {
+        folderIds: (t.folderIds || []).filter((id) => id !== folderId)
+      })
+    },
+    // Le tracce nuove nascono nella cartella selezionata. Senza, scaricare con
+    // una campagna aperta darebbe una traccia che non compare da nessuna parte
+    // (il filtro attivo la nasconde subito) e sembrerebbe un download fallito.
+    _fileNewTracks(tracks) {
+      const id = this.selectedFolderId
+      if (!id || id === UNFILED || !this.folderById(id)) return
+      for (const t of tracks) if (!t.folderIds?.length) t.folderIds = [id]
     },
     async updateTrack(id, patch) {
       const t = this.byId(id)

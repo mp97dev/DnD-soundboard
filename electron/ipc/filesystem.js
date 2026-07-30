@@ -58,6 +58,43 @@ function writeJson(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8')
 }
 
+// ---- Cartelle della libreria ----
+// L'appartenenza è MULTIPLA e vive sulla TRACCIA (folderIds): l'albero è solo
+// una lista di nodi { id, name, parentId, color }. Serve il modello playlist e
+// non quello delle directory perché la stessa traccia deve poter stare in due
+// campagne insieme; per questo nessun file si sposta su disco quando una
+// traccia entra in una cartella — audioPath/mediaPath non vengono mai toccati.
+function normalizeFolders(raw) {
+  const list = (Array.isArray(raw) ? raw : [])
+    .filter((f) => f && typeof f.id === 'string')
+    .map((f) => ({
+      id: f.id,
+      name: typeof f.name === 'string' ? f.name : '',
+      parentId: typeof f.parentId === 'string' ? f.parentId : null,
+      color: typeof f.color === 'string' ? f.color : null
+    }))
+  const byId = new Map(list.map((f) => [f.id, f]))
+  // Un parentId morto o un ciclo (JSON scritto a mano, merge di due export)
+  // renderebbe la cartella irraggiungibile nell'albero e quindi invisibile:
+  // meglio riportarla alla radice che perderla.
+  for (const f of list) {
+    if (f.parentId && !byId.has(f.parentId)) f.parentId = null
+  }
+  for (const f of list) {
+    const seen = new Set([f.id])
+    let p = f.parentId
+    while (p) {
+      if (seen.has(p)) {
+        f.parentId = null
+        break
+      }
+      seen.add(p)
+      p = byId.get(p) ? byId.get(p).parentId : null
+    }
+  }
+  return list
+}
+
 module.exports = function registerFilesystemIpc() {
   // ---- Boards ----
   ipcMain.handle('boards:list', () => {
@@ -96,17 +133,29 @@ module.exports = function registerFilesystemIpc() {
       // i path usano sempre '/' nel JSON: ricostruiti coi separatori dell'OS
       const p = t.audioPath || t.mediaPath
       t.missing = !p || !fs.existsSync(path.join(DATA_DIR, ...p.split('/')))
+      // Migrazione additiva: gli indici scritti prima delle cartelle non hanno
+      // folderIds. Si completa in lettura, senza riscrivere niente su disco:
+      // un utente che non usa le cartelle non vede cambiare il suo index.json
+      // finché non salva per altri motivi.
+      if (!Array.isArray(t.folderIds)) t.folderIds = []
     })
-    return allTracks
+    return { tracks: allTracks, folders: normalizeFolders(index.folders) }
   })
 
-  ipcMain.handle('library:save', (_e, tracks) => {
+  ipcMain.handle('library:save', (_e, payload) => {
+    // Forma nuova { tracks, folders }. Un array nudo è la forma vecchia (o un
+    // client più indietro): non deve cancellare l'albero, che in quel caso si
+    // rilegge da disco invece di essere sovrascritto con niente.
+    const tracks = Array.isArray(payload) ? payload : (payload && payload.tracks) || []
+    const folders = !Array.isArray(payload) && payload && Array.isArray(payload.folders)
+      ? payload.folders
+      : readJson(LIBRARY_INDEX, {}).folders
     // builtin: mai persistite, vengono sempre da builtin-tracks.json.
     // missing/builtin: campi derivati, ricalcolati a ogni list
     const clean = tracks
       .filter((t) => !t.builtin)
       .map(({ missing, builtin, ...t }) => t)
-    writeJson(LIBRARY_INDEX, { version: 1, tracks: clean })
+    writeJson(LIBRARY_INDEX, { version: 1, folders: normalizeFolders(folders), tracks: clean })
     return true
   })
 

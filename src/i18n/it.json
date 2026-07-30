@@ -77,6 +77,31 @@
     "titlePlaceholder": "Titolo",
     "tagPlaceholder": "+ tag",
     "save": "Salva",
+    "tagMatch": {
+      "label": "Tag:",
+      "all": "tutti",
+      "any": "almeno uno",
+      "hint": "Con più tag scelti: «tutti» tiene le tracce che li hanno tutti, «almeno uno» quelle che ne hanno almeno uno"
+    },
+    "folders": {
+      "title": "Cartelle",
+      "all": "Tutta la libreria",
+      "unfiled": "Senza cartella",
+      "new": "+ Nuova cartella",
+      "newChild": "Nuova sotto-cartella",
+      "namePlaceholder": "Nome cartella",
+      "rename": "Rinomina cartella",
+      "delete": "Elimina cartella",
+      "deleteConfirm": "Eliminare la cartella «{name}»? Le tracce restano in libreria.",
+      "color": "Colore della cartella",
+      "dropHint": "Trascina qui una traccia per aggiungerla a «{name}»",
+      "moveRefused": "Una cartella non può finire dentro sé stessa",
+      "empty": "Nessuna cartella: creane una per dividere le campagne",
+      "expand": "Espandi",
+      "collapse": "Richiudi",
+      "addTo": "+ cartella",
+      "removeFrom": "Togli dalla cartella"
+    },
     "tagSuggestions": [
       "combattimento",
       "esplorazione",
@@ -96,7 +121,14 @@
       "montagna",
       "palude",
       "notte",
-      "tempesta"
+      "tempesta",
+      "indagine",
+      "orrore",
+      "solenne",
+      "angelico",
+      "eroico",
+      "mercato",
+      "borgo"
     ]
   },
   "properties": {

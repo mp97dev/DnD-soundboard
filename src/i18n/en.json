@@ -77,6 +77,31 @@
     "titlePlaceholder": "Title",
     "tagPlaceholder": "+ tag",
     "save": "Save",
+    "tagMatch": {
+      "label": "Tags:",
+      "all": "all",
+      "any": "any",
+      "hint": "With more than one tag picked: “all” keeps the tracks that have every one of them, “any” keeps those with at least one"
+    },
+    "folders": {
+      "title": "Folders",
+      "all": "Whole library",
+      "unfiled": "No folder",
+      "new": "+ New folder",
+      "newChild": "New subfolder",
+      "namePlaceholder": "Folder name",
+      "rename": "Rename folder",
+      "delete": "Delete folder",
+      "deleteConfirm": "Delete the folder “{name}”? The tracks stay in the library.",
+      "color": "Folder colour",
+      "dropHint": "Drop a track here to add it to “{name}”",
+      "moveRefused": "A folder cannot go inside itself",
+      "empty": "No folders yet: create one to keep campaigns apart",
+      "expand": "Expand",
+      "collapse": "Collapse",
+      "addTo": "+ folder",
+      "removeFrom": "Remove from folder"
+    },
     "tagSuggestions": [
       "combat",
       "exploration",
@@ -96,7 +121,14 @@
       "mountain",
       "swamp",
       "night",
-      "storm"
+      "storm",
+      "investigation",
+      "horror",
+      "solemn",
+      "angelic",
+      "heroic",
+      "market",
+      "town"
     ]
   },
   "properties": {
