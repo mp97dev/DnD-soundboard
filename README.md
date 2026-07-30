@@ -33,12 +33,16 @@ Run it three ways from the same codebase:
   - [Scenes](#scenes)
   - [Export / Import](#export--import)
 - [Tablet mode (LAN server)](#-tablet-mode-lan-server)
+  - [Viewer full-screen on a tablet](#putting-the-viewer-full-screen-on-a-tablet)
 - [Data & storage](#-data--storage)
 - [Development](#-development)
 - [Releases (CI)](#-releases-ci)
 - [Troubleshooting](#-troubleshooting)
 - [Findings & test plan](docs/session-test-plan.md) — why audio stuttered and the
   TV dropped during a real 4-hour session, what changed, and what to measure next
+- [Known limitations & workarounds](docs/known-limitations.md) — what's
+  deliberately unfinished, the tab-casting fallback, and the technical debt
+  behind each decision
 
 ---
 
@@ -58,9 +62,21 @@ Run it three ways from the same codebase:
 - **Searchable, taggable library** — filter by name *or* tag, tag tracks by usage
   (combat, exploration) and biome (city, castle, forest…), rename anything
   inline, preview audio without leaving edit mode.
+- **Folders that don't force a choice** — file tracks per campaign, and put the
+  same track in *several* folders at once: the battle theme you reuse in a new
+  campaign genuinely lives in both, with no copies on disk.
+- **Full-window library** — a dialog with a cover-art grid for finding things
+  mid-session and a multi-select table for tidying up between them: bulk tag,
+  bulk file, bulk retype, bulk remove.
+- **Themes, including your own** — three built-in (warm dark, indigo dark, and a
+  light one for prep in daylight) plus a custom palette you build yourself.
+- **Italian and English** — follows the system language on first run, and never
+  translates the tags you typed.
 - **Chromecast visuals** — cast any image or video to your TV. The app serves
-  the file over HTTP on your LAN and drives the TV with the Cast protocol —
-  no browser-tab casting, no mirroring, no flakiness.
+  the file over HTTP on your LAN and drives the TV with the Cast protocol, so
+  the TV decodes the original file instead of a re-encoded mirror of a browser
+  tab. (If casting misbehaves on your network there's a tab-casting fallback —
+  see [known limitations](docs/known-limitations.md).)
 - **Viewer page** — the current visual is also served as a plain web page on your
   LAN: open it on a tablet or any second screen, with or without a Chromecast.
 - **Diagnostic log** — a single rotating log file records playback, cast session
@@ -146,8 +162,22 @@ Output lands in `dist/out/`.
 ![Toolbar](docs/img/toolbar.png)
 
 Left to right: **board switcher**, **+ Nuova board**, the **📺 Chromecast
-picker**, **Export/Import**, the **Master volume**, **⏹ Stop All** (fades all
-audio out *and* stops the cast) and the **Play/Edit** mode toggle.
+picker**, the **📱 viewer link**, the **🎨 appearance & language** popover,
+**Export/Import**, the **Master volume**, **⏹ Stop All** (fades all audio out
+*and* stops the cast) and the **Play/Edit** mode toggle.
+
+The bar wraps to a second row on narrower windows rather than clipping
+controls — Stop All and Play/Edit never shrink, because those are the two you
+reach for when something goes wrong mid-session.
+
+**Themes and language** live in the 🎨 popover. Three built-in themes —
+*Candela* (warm dark), *Notturno* (indigo dark) and *Giorno* (light, for
+prep in daylight) — plus **Personale**, where you pick seven colours and the
+structural tones are derived from your background and text so the result stays
+legible whatever you choose. The interface is available in **Italian and
+English**; on first run it follows the system language and never overrides a
+choice you have made. Your own tags are data, not interface, and are never
+translated.
 
 ### Boards
 
@@ -179,6 +209,37 @@ In **Edit mode** the left sidebar is your library.
   coloured dot marks the channel (blue/green/amber/purple). Drag anything onto
   the grid to create a button.
 
+**Folders**
+
+Above the type sections is a folder tree — make one per campaign, nest them as
+deep as you like. A track can be in **more than one folder at a time**: drag it
+onto a folder to *add* it there, without taking it out of where it already is.
+That's the point of the model — the ambush music you reuse in a new campaign
+belongs to both, and neither copy is the "real" one.
+
+- Selecting a folder shows everything beneath it, sub-folders included.
+- **Senza cartella** is just the complement, not a special place.
+- Deleting a folder never deletes tracks: its children move up to its parent and
+  the tracks simply stop being filed there.
+- Folders travel in the `.dnds` export, so the split survives moving machines.
+
+**The full-window library**
+
+The button in the library header opens the whole library in a dialog, which is
+easier to search than a 200px sidebar mid-session. Two views over the same
+filters and the same selection:
+
+- **⊞ Griglia** — big cover art, for finding something by eye while playing.
+- **▤ Tabella** — sortable columns and checkboxes, for tidying up between
+  sessions. Select rows (shift-click for a range) and apply in bulk: add or
+  remove a tag, add or remove a folder, change the channel, or remove from the
+  library.
+
+Removing a track takes the entry out of the library and **leaves your files
+alone** — a downloaded mp3 isn't recoverable, and "remove from library" isn't
+"delete my files". Before removing, the confirmation tells you how many buttons
+across **all** boards point at what you're about to remove.
+
 **Finding things once the library grows**
 
 - **Search** matches both the title and the tags.
@@ -202,12 +263,23 @@ In **Edit mode** the left sidebar is your library.
 ![Edit mode](docs/img/edit-mode.png)
 
 - **Drag** a library track or visual onto the grid to add a button; **drag** an
-  existing button to move it.
-- **Click** a button to select it (orange outline) and edit it in the
-  **properties panel**: label, audio track, visual, channel, volume, size.
+  existing button to move it. A ghost snaps to the cells the button will land
+  on, and turns **red when the target is occupied** — dropping there is refused
+  rather than stacking two buttons on the same cells.
+- **Click** a button to select it and edit it in the **properties panel**:
+  label, audio track, visual, channel, volume, size.
 
 ![Properties panel](docs/img/properties-panel.png)
 
+- **Resize by dragging any of the eight handles** on the selected button. The
+  side handles move one edge, the corners move two. The **north and west
+  handles move the anchor**, so a button grows left and upward — the numeric
+  Larghezza/Altezza fields keep the top-left corner pinned and can only ever
+  grow right and down.
+- **Keyboard**: arrows nudge the selected button by a cell, `Shift`+arrows
+  resize it, `Ctrl+Z` undoes and `Ctrl+Shift+Z` redoes. Undo covers the last 50
+  changes, is scoped to the board you are on, and treats a whole label edit as
+  one step rather than one per keystroke.
 - **Double-click** a button to play it right there — handy for checking a scene
   without leaving edit mode and coming back.
 - A button showing a dashed border is **unassigned** or its file is **missing**.
@@ -235,11 +307,20 @@ The session view — big buttons, no editing. Tap to trigger. Button colours:
 3. Tap the button again — or the **✕** next to the picker, or **Stop All** —
    to stop casting. Casting a different visual simply replaces the current one.
 
-**How it works** — the app never "casts a tab": the Node process (desktop app
-or LAN server) tells the Chromecast to fetch the file from a tiny local HTTP
-media endpoint (`:8123` on desktop, the server port in tablet mode). That's the
-reliable way to cast and costs nothing in quality. The PC/server and the TV
-must be on the same LAN.
+**How it works** — the app doesn't mirror a browser tab: the Node process
+(desktop app or LAN server) tells the Chromecast to fetch the file from a tiny
+local HTTP media endpoint (`:8123` on desktop, the server port in tablet mode).
+That costs nothing in quality, since the TV decodes the original file. The
+PC/server and the TV must be on the same LAN.
+
+> **If casting fails often on your network**, there is a workaround that trades
+> quality for reliability: open `/viewer` in Chrome and use **Cast → Sources →
+> Cast tab**, leaving the 📺 picker empty so the app stays in viewer-only mode.
+> Chrome handles the transport, at the cost of a few manual clicks per session
+> and a re-encoded (lower quality) picture. See
+> **[docs/known-limitations.md](docs/known-limitations.md)** for why the app
+> can't start tab mirroring itself, and for the log signatures that tell the
+> three failure modes apart.
 
 **Viewer page (tablet / second screen)** — the 📱 toolbar button copies a LAN URL
 serving the current visual as an ordinary web page. Open it on a tablet, a
@@ -297,6 +378,32 @@ systemd units: the **server** and a **15-minute auto-updater** that pulls new
 commits and rebuilds. Then open `http://<lxc-ip>:8080` on the tablet.
 
 Run it locally instead with `npm run server` (→ `http://localhost:8080`).
+
+### Putting the viewer full-screen on a tablet
+
+The viewer page (`/viewer`, the URL the 📱 button copies) is meant to sit on a
+tablet for a whole session, so it's worth getting rid of the browser chrome.
+
+**Add it to the home screen** — the reliable way, and the only one that needs no
+interaction at all:
+
+- **Android / Chrome**: ⋮ → *Add to Home screen*
+- **iPad / Safari**: Share → *Add to Home Screen*
+
+Launched from that icon the page opens with **no address bar and no tabs**, and
+stays that way across restarts.
+
+**Or just tap the page** — if you only open the link, one tap anywhere goes
+full-screen. A hint in the middle says so and fades once you've tapped; it never
+appears when the page was launched from the home-screen icon.
+
+A page can't put *itself* full-screen on load — browsers require a real user
+gesture, so any page could otherwise take over your screen unasked. The
+home-screen route is what gets around that honestly.
+
+The viewer also holds a **screen wake lock** while it's visible, so the tablet
+doesn't blank halfway through a session and look like the viewer has crashed.
+The lock is released when you switch away and re-taken when you come back.
 
 Full details, env vars, cast API, egress/caching notes and remote access
 (Tailscale) are in **[server/README.md](server/README.md)**.
@@ -469,6 +576,17 @@ option once users may have downloaded it.
   reach the PC/server on port 8123 (desktop) or the server port.
 - **Cast starts then stops** on old Chromecast models: make sure the video is
   H.264 mp4 (the 🎬 download already is; re-encode exotic local files).
+- **Casting fails most of the time**: this is a known open issue. Get the log
+  off the gaming machine and run `npm run session-report -- <file.log>
+  --verbose`; the three failure modes (connect / media load / mid-session drop)
+  have distinct signatures and different fixes — they're tabulated in
+  [docs/known-limitations.md](docs/known-limitations.md). In the meantime you
+  can put the viewer page on the TV with Chrome's **Cast → Sources → Cast tab**
+  and leave the 📺 picker empty.
+- **A visual stops after a while on the TV**: short clips hit the HLS loop
+  ceiling. Videos are cast as a playlist repeating the same segments to fake a
+  ~4-hour file, capped at 500 repeats — so a 5-second clip runs out after about
+  42 minutes. Use a longer clip.
 - **Tablet can't reach the server**: it must be on the same network as the host;
   check the LXC IP and that port `8080` is open. See
   [server/README.md](server/README.md) for remote access.
