@@ -4,6 +4,7 @@ const path = require('path')
 const fs = require('fs')
 const { DIRS } = require('../paths')
 const { preferredBin, maybeUpdate, friendlyError } = require('../../server/lib/ytdlp-update')
+const { shrinkThumbnail } = require('../../server/lib/thumbnails')
 
 // In dev: yt-dlp/ffmpeg devono essere nel PATH o in ./bin
 // In produzione: inclusi come extraResource
@@ -28,13 +29,19 @@ function ytdlpPath() {
   return preferredBin(base, updateDir())
 }
 
+// ffmpeg bundled se disponibile, altrimenti quello di sistema
+function ffmpegBin() {
+  const bin = path.join(binDir(), process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
+  return fs.existsSync(bin) ? bin : 'ffmpeg'
+}
+
 // Argomenti comuni a tutte le chiamate yt-dlp
 function baseArgs() {
   const args = []
 
   // ffmpeg: usa il binario bundled se disponibile
-  const ffmpegBin = path.join(binDir(), process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
-  if (fs.existsSync(ffmpegBin)) {
+  const bundled = path.join(binDir(), process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
+  if (fs.existsSync(bundled)) {
     args.push('--ffmpeg-location', binDir())
   }
 
@@ -212,7 +219,11 @@ async function doDownloadTrack({ url, ytId, base, onProgress, job }) {
       '-o', path.join(DIRS.thumbnails, ytId),
       url
     ], null, job)
-    if (fs.existsSync(path.join(DIRS.thumbnails, `${ytId}.jpg`))) {
+    const thumbAbs = path.join(DIRS.thumbnails, `${ytId}.jpg`)
+    if (fs.existsSync(thumbAbs)) {
+      // YouTube la dà a 1280x720; sui bottoni e in libreria si vede a una
+      // frazione di quella misura. Vedi server/lib/thumbnails.js.
+      await shrinkThumbnail(thumbAbs, ffmpegBin())
       thumbnailPath = `library/thumbnails/${ytId}.jpg`
     }
   } catch (e) {
@@ -285,7 +296,11 @@ async function doDownloadVisual({ url, ytId, base, onProgress, job }) {
       '-o', path.join(DIRS.thumbnails, ytId),
       url
     ], null, job)
-    if (fs.existsSync(path.join(DIRS.thumbnails, `${ytId}.jpg`))) {
+    const thumbAbs = path.join(DIRS.thumbnails, `${ytId}.jpg`)
+    if (fs.existsSync(thumbAbs)) {
+      // YouTube la dà a 1280x720; sui bottoni e in libreria si vede a una
+      // frazione di quella misura. Vedi server/lib/thumbnails.js.
+      await shrinkThumbnail(thumbAbs, ffmpegBin())
       thumbnailPath = `library/thumbnails/${ytId}.jpg`
     }
   } catch (e) {

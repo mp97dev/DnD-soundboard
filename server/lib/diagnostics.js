@@ -30,7 +30,11 @@ function run(cmd, args) {
       resolve(null)
     }, PROBE_TIMEOUT_MS)
     try {
-      child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'ignore'] })
+      // LC_ALL=C: pactl traduce le etichette del suo output. Su una Ubuntu in
+      // italiano "Active Profile" diventa "Profilo attivo", e una sonda che
+      // cerca l'etichetta inglese smette di trovare niente proprio sulle
+      // macchine di chi non ha l'inglese — cioè quelle di chi ci gioca.
+      child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, LC_ALL: 'C' } })
     } catch {
       clearTimeout(timer)
       resolve(null)
@@ -71,21 +75,58 @@ async function logDistro() {
   }
 }
 
-async function logAudioServer() {
-  const out = await run('pactl', ['info'])
-  if (!out) {
-    env.info('audio-server', { pactl: 'non disponibile' })
-    return
+// Il profilo Bluetooth attivo, ricavato dal JSON di pactl.
+//
+// Perché non basta sapere che il sink è bluez: A2DP e HSP/HFP sono due mondi.
+// A2DP è stereo a 44.1 kHz e suona; HSP/HFP è mono a 8-16 kHz, nato per il
+// telefono, e la musica ci esce impastata e a scatti. Il passaggio da uno
+// all'altro lo decide il sistema, NON l'utente: basta che un processo qualsiasi
+// apra il microfono — una scheda del browser su una videochiamata, un sito che
+// chiede il permesso — e la cassa scivola in HSP con la musica in corso.
+// Nessun evento arriva all'app: la musica peggiora e basta.
+function parseBluetoothProfile(cardsJson) {
+  try {
+    const cards = JSON.parse(cardsJson)
+    const bt = cards.find((c) => /bluez/i.test(c.name || ''))
+    if (!bt) return null
+    const profile = bt.active_profile || 'sconosciuto'
+    return {
+      card: bt.name,
+      profile,
+      // I nomi veri sono 'a2dp-sink', 'a2dp-sink-sbc', 'a2dp-sink-aac',
+      // 'headset-head-unit', 'headset-head-unit-msbc'…: si guarda il prefisso.
+      hifi: /^a2dp/i.test(profile)
+    }
+  } catch {
+    return null
   }
-  const serverName = extractField(out, 'Server Name') || 'sconosciuto'
-  const defaultSink = extractField(out, 'Default Sink') || 'sconosciuto'
-  // "bluez" nel nome del sink = output su altoparlante/soundbar Bluetooth:
-  // è la causa più comune di dropout audio, va distinta da un sink cablato
-  env.info('audio-server', {
-    server: serverName,
+}
+
+// Fotografia dell'uscita audio. Tutto opzionale: su una macchina senza pactl
+// (Windows, container) si torna con { pactl: 'non disponibile' } e nessuna
+// sonda si lamenta.
+async function probeAudioSink() {
+  const info = await run('pactl', ['info'])
+  if (!info) return { pactl: 'non disponibile' }
+  const defaultSink = extractField(info, 'Default Sink') || 'sconosciuto'
+  const snap = {
+    server: extractField(info, 'Server Name') || 'sconosciuto',
     defaultSink,
+    // "bluez" nel nome del sink = output su altoparlante/soundbar Bluetooth:
+    // è la causa più comune di dropout audio, va distinta da un sink cablato
     bluetooth: /bluez/i.test(defaultSink)
-  })
+  }
+  if (!snap.bluetooth) return snap
+  // -f json invece del testo: l'output a etichette cambia fra versioni di
+  // pactl oltre che con la lingua, il JSON no. Se questa pactl è troppo
+  // vecchia per -f json, run() torna null e si resta al dato di sopra.
+  const bt = parseBluetoothProfile(await run('pactl', ['-f', 'json', 'list', 'cards']))
+  return bt ? { ...snap, profiloBluetooth: bt.profile, altaFedelta: bt.hifi } : snap
+}
+
+async function logAudioServer() {
+  const snap = await probeAudioSink()
+  env.info('audio-server', snap)
 }
 
 async function logWifiPowerSave() {
@@ -148,4 +189,4 @@ async function logEnvironment() {
   }
 }
 
-module.exports = { logEnvironment }
+module.exports = { logEnvironment, probeAudioSink, parseBluetoothProfile }

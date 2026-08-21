@@ -191,6 +191,28 @@ function report(entries, { verbose }) {
   const nonRunning = ctxChanges.filter((e) => e.fields.state && e.fields.state !== 'running')
   if (nonRunning.length) out.push(`  AudioContext uscito da 'running' ${nonRunning.length} volte (${nonRunning.map((e) => hhmm(e.at)).join(', ')})`)
 
+  // L'uscita audio cambiata a sessione in corso: la cassa che passa a un'altra,
+  // o il Bluetooth che scivola da A2DP a HSP/HFP. Va messo accanto agli stalli
+  // qui sopra, perché è confrontando gli orari che si capisce chi ha causato cosa.
+  const sinkChanges = entries.filter((e) => e.msg === 'uscita audio cambiata')
+  if (sinkChanges.length) {
+    out.push('')
+    out.push(...table([
+      ['ora', 'da', 'a', 'qualità persa'],
+      ...sinkChanges.map((e) => [
+        hhmm(e.at),
+        e.fields.profiloBluetoothPrima ?? e.fields.defaultSinkPrima ?? '?',
+        e.fields.profiloBluetoothDopo ?? e.fields.defaultSinkDopo ?? '?',
+        e.fields.perditaDiQualita === 'true' ? 'SÌ' : 'no'
+      ])
+    ]))
+    if (sinkChanges.some((e) => e.fields.perditaDiQualita === 'true')) {
+      out.push('  → la cassa Bluetooth è scesa da A2DP (stereo 44.1 kHz) a HSP/HFP (mono 8-16 kHz).')
+      out.push('    Lo fa il sistema quando QUALCUNO apre il microfono: quasi sempre una scheda del')
+      out.push('    browser. La musica non si ferma, peggiora — ed è esattamente ciò che si sente.')
+    }
+  }
+
   // ---- Battiti di salute ----
   const beatsUi = entries.filter((e) => e.scope === 'ui:health')
   const beatsHost = entries.filter((e) => e.scope === 'health')
@@ -212,7 +234,37 @@ function report(entries, { verbose }) {
     // si caricano): quel ritardo dell'event loop non dice niente sulla sessione.
     const loop = trend(beatsHost.slice(1), 'loopDelayMs')
     if (loop) rows.push(['ritardo event loop (ms)', loop.primo, loop.ultimo, loop.max])
+    const carico = trend(beatsHost, 'caricoPerCpu')
+    if (carico) rows.push(['carico per CPU', carico.primo, carico.ultimo, carico.max])
+    const cpu = trend(beatsHost, 'cpuPct')
+    if (cpu) rows.push(['CPU del processo (%)', cpu.primo, cpu.ultimo, cpu.max])
+    const ram = trend(beatsHost, 'ramLiberaMB')
+    if (ram) rows.push(['RAM libera (MB)', ram.primo, ram.ultimo, ram.max])
+    const buffer = trend(beatsUi, 'bufferMinSec')
+    if (buffer) rows.push(['buffer audio minimo (s)', buffer.primo, buffer.ultimo, buffer.max])
     out.push(...table(rows))
+
+    // I buchi audio per minuto: la misura che dice se la sessione è scattata,
+    // quando, e accanto a quale carico. Sono i due numeri da leggere insieme.
+    const buchi = beatsUi
+      .map((e) => ({ at: e.at, n: num(e.fields.buchi) ?? 0, buf: e.fields.bufferMinSec, scheda: e.fields.scheda }))
+      .filter((b) => b.n > 0)
+    if (buchi.length) {
+      const tot = buchi.reduce((s, b) => s + b.n, 0)
+      out.push('')
+      out.push(`  buchi audio: ${tot} in ${buchi.length} minuti su ${beatsUi.length}`)
+      out.push(...table([
+        ['ora', 'buchi', 'buffer min (s)', 'scheda'],
+        ...buchi.slice(0, verbose ? 200 : 8).map((b) => [hhmm(b.at), b.n, b.buf ?? '?', b.scheda ?? '?'])
+      ]))
+      if (carico && carico.max >= 1) {
+        out.push(`  → il carico ha toccato ${carico.max} per CPU: sopra 1 la macchina ha più lavoro di quanto`)
+        out.push('    ne sappia eseguire, e il thread che spinge l\'audio verso la cassa manca le scadenze.')
+        out.push('    Con dei buchi negli stessi minuti, la causa è la macchina, non l\'app.')
+      }
+    } else if (beatsUi.length) {
+      out.push('  nessun buco audio registrato')
+    }
     if (heap && heap.ultimo > heap.primo * 2 && heap.ultimo - heap.primo > 100) {
       out.push('  → l\'heap del renderer è più che raddoppiato: sospetta perdita di memoria, allega il log')
     }

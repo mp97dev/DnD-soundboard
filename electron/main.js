@@ -2,7 +2,7 @@ const { app, BrowserWindow, Menu, protocol } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { Readable } = require('stream')
-const { DATA_DIR, ensureDataDirs } = require('./paths')
+const { DATA_DIR, DIRS, ensureDataDirs, ffmpegPath } = require('./paths')
 const log = require('../server/lib/log')
 const registerFilesystemIpc = require('./ipc/filesystem')
 const registerSettingsIpc = require('./ipc/settings')
@@ -69,6 +69,13 @@ app.whenReady().then(() => {
   // Fire-and-forget: la diagnostica d'ambiente non deve mai ritardare
   // l'apertura della finestra, anche se una sonda si comporta male
   require('../server/lib/diagnostics').logEnvironment().catch(() => {})
+  // Stessa regola per le copertine già scaricate a piena risoluzione: la
+  // passata è idempotente, quindi gira a ogni avvio, ma in sottofondo e a
+  // priorità bassa (vedi server/lib/thumbnails.js).
+  require('../server/lib/thumbnails')
+    .shrinkAll(DIRS.thumbnails, ffmpegPath())
+    .then((r) => r.ridotte && log.info('app', 'copertine rimpicciolite', r))
+    .catch(() => {})
   log.info('app', 'avvio', {
     appVersion: app.getVersion(),
     electron: process.versions.electron,

@@ -16,7 +16,8 @@ const viewer = require('./lib/viewer')
 const visuals = require('./lib/visuals')
 const log = require('./lib/log')
 const { serveMedia, BLANK_PNG } = require('./lib/media')
-const { DATA_DIR, RENDERER_DIR, BIN_DIR, ensureDataDirs } = require('./lib/paths')
+const { shrinkAll } = require('./lib/thumbnails')
+const { DATA_DIR, DIRS, RENDERER_DIR, BIN_DIR, ensureDataDirs } = require('./lib/paths')
 
 const PORT = Number(process.env.PORT) || 8080
 const HOST = process.env.HOST || '0.0.0.0'
@@ -26,6 +27,11 @@ log.init(DATA_DIR)
 // Fire-and-forget: la diagnostica d'ambiente non deve mai ritardare
 // l'apertura del server, anche se una sonda si comporta male
 require('./lib/diagnostics').logEnvironment().catch(() => {})
+// Stessa regola per le copertine già scaricate a piena risoluzione: la passata
+// è idempotente, quindi gira a ogni avvio, ma in sottofondo e a priorità bassa.
+shrinkAll(DIRS.thumbnails, ffmpegPath())
+  .then((r) => r.ridotte && log.info('app', 'copertine rimpicciolite', r))
+  .catch(() => {})
 
 const app = express()
 app.use(express.json({ limit: '25mb' }))
@@ -76,6 +82,20 @@ app.post('/api/settings', (req, res) => res.json(store.saveSettings(req.body)))
 app.post('/api/log', (req, res) => {
   log.fromClient(req.body)
   res.json({ ok: true })
+})
+
+// Il log da mandare a chi deve guardarlo. Una GET, quindi si raggiunge anche
+// scrivendo l'indirizzo a mano da un tablet o da un telefono, senza passare
+// dall'interfaccia — che è esattamente il caso in cui l'interfaccia è quella
+// che sta dando problemi.
+app.get('/api/logs/export', (_req, res) => {
+  res
+    .set({
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${log.exportName()}"`,
+      'Cache-Control': 'no-store'
+    })
+    .send(log.exportText())
 })
 
 app.get('/api/config/export', (_req, res) => {
@@ -235,21 +255,28 @@ function serveShell(res) {
   const inject =
     `<script>window.__MEDIA_BASE__='/media/'</script>` +
     `<script src="/web-api.js"></script>`
-  res.type('html').send(html.replace('</head>', `${inject}</head>`))
+  // La shell è l'unico file che nomina gli asset buildati (hash nel nome):
+  // se resta appesa in una cache, il client resta appeso alla build di allora.
+  // Deve sempre passare da una rivalidazione — ETag permettendo, un 304 costa
+  // niente. Stessa regola per sw.js e web-api.js, che non hanno hash nel nome.
+  res.set('Cache-Control', 'no-cache').type('html').send(html.replace('</head>', `${inject}</head>`))
 }
 
-app.get('/web-api.js', (_req, res) => {
+function sendNoCache(res, file, headers = {}) {
+  res.set({ 'Cache-Control': 'no-cache', ...headers })
   res.type('application/javascript')
-  res.sendFile(path.join(__dirname, 'web-api.js'))
-})
-app.get('/sw.js', (_req, res) => {
-  res.type('application/javascript')
-  res.setHeader('Service-Worker-Allowed', '/')
-  res.sendFile(path.join(__dirname, 'sw.js'))
-})
+  res.sendFile(file)
+}
+
+app.get('/web-api.js', (_req, res) => sendNoCache(res, path.join(__dirname, 'web-api.js')))
+app.get('/sw.js', (_req, res) =>
+  sendNoCache(res, path.join(__dirname, 'sw.js'), { 'Service-Worker-Allowed': '/' }))
 
 app.get(['/', '/index.html'], (_req, res) => serveShell(res))
-app.use(express.static(RENDERER_DIR, { index: false }))
+// Gli asset buildati hanno l'hash del contenuto nel nome: lo stesso URL non
+// cambierà mai contenuto, e una build nuova chiede nomi nuovi. Sono l'unica
+// cosa qui dentro che si può davvero congelare (la shell no: vedi serveShell).
+app.use(express.static(RENDERER_DIR, { index: false, immutable: true, maxAge: '1y' }))
 // Fallback: qualunque GET non gestito serve la shell (refresh del browser)
 app.get(/.*/, (_req, res) => serveShell(res))
 

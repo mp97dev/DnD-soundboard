@@ -25,4 +25,20 @@ function ensureDataDirs() {
   Object.values(DIRS).forEach((d) => fs.mkdirSync(d, { recursive: true }))
 }
 
-module.exports = { DATA_DIR, DIRS, LIBRARY_INDEX, SETTINGS_FILE, ensureDataDirs }
+// In dev i binari stanno in ./bin (npm run fetch:ffmpeg), nel pacchetto sono
+// extraResource. Stava scritto identico in tre file (cast, filesystem e la
+// segmentazione HLS): tre punti da correggere il giorno che il layout cambia,
+// e nessuno che avvisa se se ne aggiorna solo due.
+function binDir() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'bin')
+    : path.join(__dirname, '..', 'bin')
+}
+
+// Il nome nudo come ripiego: se non è nel pacchetto può essere nel PATH.
+function ffmpegPath() {
+  const bin = path.join(binDir(), process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
+  return fs.existsSync(bin) ? bin : 'ffmpeg'
+}
+
+module.exports = { DATA_DIR, DIRS, LIBRARY_INDEX, SETTINGS_FILE, ensureDataDirs, binDir, ffmpegPath }

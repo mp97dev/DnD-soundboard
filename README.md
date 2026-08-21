@@ -163,8 +163,8 @@ Output lands in `dist/out/`.
 
 Left to right: **board switcher**, **+ Nuova board**, the **📺 Chromecast
 picker**, the **📱 viewer link**, the **🎨 appearance & language** popover,
-**Export/Import**, the **Master volume**, **⏹ Stop All** (fades all audio out
-*and* stops the cast) and the **Play/Edit** mode toggle.
+**Export/Import**, **🩺 export log**, the **Master volume**, **⏹ Stop All**
+(fades all audio out *and* stops the cast) and the **Play/Edit** mode toggle.
 
 The bar wraps to a second row on narrower windows rather than clipping
 controls — Stop All and Play/Edit never shrink, because those are the two you
@@ -378,6 +378,21 @@ systemd units: the **server** and a **15-minute auto-updater** that pulls new
 commits and rebuilds. Then open `http://<lxc-ip>:8080` on the tablet.
 
 Run it locally instead with `npm run server` (→ `http://localhost:8080`).
+
+### Getting updates onto the tablet
+
+The server auto-updates, but the browser holds its own copy: a service worker
+caches the built assets so the UI works offline and each device downloads them
+once. Reloading the page is enough — the page shell is always fetched from the
+network, and it's the shell that names the current assets.
+
+> **Upgrading from 1.0.3 or earlier?** Those versions cached the shell too,
+> which pinned every browser to the first build it ever loaded — new server
+> builds never arrived, and not even Ctrl+Shift+R helped. The fix ships in the
+> service worker itself, so it needs **two reloads once**: the first installs
+> the corrected worker, the second gets the current build. After that a single
+> reload is enough, forever. If a browser somehow stays stuck, clear the site
+> data for it (DevTools → Application → Storage → *Clear site data*).
 
 ### Putting the viewer full-screen on a tablet
 
@@ -606,14 +621,30 @@ option once users may have downloaded it.
 One rotating file records startup, environment, playback and cast health:
 
 ```
-~/.config/DnD Soundboard/data/logs/soundboard.log   # packaged Linux app
+~/.config/DnD Soundboard/data/logs/soundboard.log   # packaged Linux app (.deb)
 ./data/logs/soundboard.log                          # development / server mode
 ```
 
 It rotates at 2 MB keeping one backup, and a logging failure can never break
 playback. Both the app and the host process write a heartbeat line every minute
-(voices actually playing, heap, RSS, event-loop delay, cast uptime) — that is
-what makes a four-hour session readable afterwards.
+— that is what makes a four-hour session readable afterwards. Each beat records
+the voices actually playing and how many seconds of audio they have buffered
+ahead, how many times playback ran dry in the last minute, heap and RSS,
+event-loop delay, **load per CPU**, process CPU share, free RAM and cast uptime.
+The host also re-checks the audio output every beat and logs a line when it
+changes — including a Bluetooth speaker dropping from A2DP to HSP/HFP, which no
+event ever announces and which makes music sound worse without stopping it.
+
+**Getting the log off the machine.** You never need those paths: the **🩺**
+toolbar button saves the whole thing — rotated backup first, so the session
+reads in order — as one dated `.txt`. On the desktop app it opens a save dialog
+and then reveals the file in your file manager; in tablet mode the browser just
+downloads it. In tablet mode you can also skip the interface entirely, which
+helps when the interface is the thing misbehaving:
+
+```
+http://<host>:8080/api/logs/export
+```
 
 Don't read it by hand:
 

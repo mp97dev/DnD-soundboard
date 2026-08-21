@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { engine } from '../audio/engine'
 import { applyLocale, systemLocale } from '../i18n'
+import { persisterFor } from './persist'
 
 // I sette colori che l'utente sceglie per il tema personale: tokens.css ricava
 // da bg e text i quattro token strutturali, quindi qui non si nominano.
@@ -147,9 +148,19 @@ export const useSettingsStore = defineStore('settings', {
       Object.assign(this, patch)
       await this.persist()
     },
-    async persist() {
-      // $state è un Proxy reattivo: il contextBridge lo rifiuta, serve il clone
-      await window.api.settings.save(JSON.parse(JSON.stringify(this.$state)))
+    // Raggruppata: lo slider del master emette su @input, cioè decine di volte
+    // al secondo mentre si trascina. Vedi persist.js per il perché.
+    persist() {
+      this._writer().schedule()
+    },
+    // Salva SUBITO, senza aspettare la finestra di quiete.
+    flush() {
+      return this._writer().flush()
+    },
+    _writer() {
+      return persisterFor(this, () =>
+        // $state è un Proxy reattivo: il contextBridge lo rifiuta, serve il clone
+        window.api.settings.save(JSON.parse(JSON.stringify(this.$state))))
     }
   }
 })

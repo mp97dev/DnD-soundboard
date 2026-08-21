@@ -10,18 +10,9 @@ const cast = require('../../server/lib/cast')
 const viewer = require('../../server/lib/viewer')
 const visuals = require('../../server/lib/visuals')
 const { serveMedia, BLANK_PNG } = require('../../server/lib/media')
-const { DATA_DIR } = require('../paths')
+const { DATA_DIR, ffmpegPath } = require('../paths')
 
 const CAST_PORT = Number(process.env.SOUNDBOARD_CAST_PORT) || 8123
-
-// ffmpeg: bundled (extraResource / ./bin in dev) o nel PATH di sistema
-function ffmpegPath() {
-  const dir = app.isPackaged
-    ? path.join(process.resourcesPath, 'bin')
-    : path.join(__dirname, '..', '..', 'bin')
-  const bin = path.join(dir, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
-  return fs.existsSync(bin) ? bin : 'ffmpeg'
-}
 
 // Corpo, ETag e header li decide viewer.js (stesse risposte servite dal server
 // LAN); qui resta solo come scriverli su una res di http.createServer.

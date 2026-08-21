@@ -262,4 +262,46 @@ function child(scope) {
   }
 }
 
-module.exports = { init, debug, info, warn, error, child, fromClient, flushSync }
+// ---- Esportazione ----
+// Il log è utile solo se chi ha visto il guasto riesce a mandarcelo. Installato
+// dal .deb finisce in ~/.config/dnd-soundboard/data/logs/, una cartella nascosta
+// che nessuno trova per caso: serve un modo di tirarlo fuori senza spiegare un
+// percorso al telefono. Da qui passano sia il bottone dell'interfaccia sia la
+// rotta HTTP del server LAN.
+//
+// Il .1 PRIMA del corrente: la rotazione mette il vecchio nel .1, quindi
+// concatenati in quest'ordine danno un unico file in ordine di tempo. Senza il
+// .1 una sessione lunga arriva già tagliata a metà, ed è la metà iniziale —
+// quella con l'ambiente e l'avvio — a sparire.
+function exportText() {
+  // flushSync prima di leggere: le ultime righe possono essere ancora in coda,
+  // e sono proprio quelle del guasto appena successo.
+  flushSync()
+  if (!logFile) return '(nessun log: logging non inizializzato)\n'
+  const parts = []
+  for (const f of [`${logFile}.1`, logFile]) {
+    try {
+      parts.push(fs.readFileSync(f, 'utf-8'))
+    } catch { /* rotazione mai avvenuta, o file appena creato */ }
+  }
+  const text = parts.join('')
+  return text || '(log vuoto)\n'
+}
+
+// soundboard-log-2026-08-21_153247.txt: la data resta leggibile (serve a
+// riconoscere quale sessione è, quando in cartella ce ne sono tre), l'ora no —
+// i due punti non si possono usare in un nome di file su Windows.
+function exportName() {
+  const [date, time] = new Date().toISOString().slice(0, 19).split('T')
+  return `soundboard-log-${date}_${time.replace(/:/g, '')}.txt`
+}
+
+// Dove sta il log, per poterlo DIRE all'utente invece di farglielo cercare.
+function logPath() {
+  return logFile
+}
+
+module.exports = {
+  init, debug, info, warn, error, child, fromClient, flushSync,
+  exportText, exportName, logPath
+}

@@ -123,7 +123,17 @@
     },
     log: {
       // Un log fallito non deve mai far esplodere il chiamante: post() rilancia sugli status non-2xx
-      write: (entry) => post('/api/log', entry).catch(() => {})
+      write: (entry) => post('/api/log', entry).catch(() => {}),
+      // Nel browser "esportare" è scaricare: la rotta manda già il file come
+      // allegato con il suo nome, quindi basta seguirla. Un <a download> non
+      // servirebbe — e non funzionerebbe dentro l'artifact viewer di alcuni
+      // browser — mentre una navigazione verso un Content-Disposition attachment
+      // lascia la pagina dov'è e apre il salvataggio.
+      export: async () => {
+        location.href = '/api/logs/export'
+        return 'download'
+      },
+      path: () => Promise.resolve(null)
     }
   }
 

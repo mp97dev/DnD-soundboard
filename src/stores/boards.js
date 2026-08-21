@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { useLibraryStore } from './library'
 import { findFreeCell, clampToBounds } from '../grid'
+import { persisterFor } from './persist'
 import { t } from '../i18n'
 
 let uid = () => Math.random().toString(36).slice(2, 10)
@@ -60,6 +61,7 @@ export const useBoardsStore = defineStore('boards', {
       }
     },
     async openBoard(id) {
+      await this.flush() // le modifiche in attesa appartengono alla board che si sta lasciando
       this.currentBoardId = id
       this.selectedButtonId = null
       // Gli stack seguono la board, e cambiando board si buttano. Le
@@ -92,12 +94,32 @@ export const useBoardsStore = defineStore('boards', {
       return board
     },
     async deleteBoard(id) {
+      // Prima si scrive quel che è in attesa, poi si cancella: al contrario, un
+      // salvataggio ancora in coda ricreerebbe il file appena tolto.
+      await this.flush()
       this.boards = this.boards.filter((b) => b.id !== id)
       if (this.currentBoardId === id) this.currentBoardId = this.boards[0]?.id ?? null
       await window.api.boards.delete(id)
     },
-    async saveCurrent() {
-      if (this.current) await window.api.boards.save(JSON.parse(JSON.stringify(this.current)))
+    // Raggruppata: l'etichetta di un bottone si salva a ogni tasto premuto, e
+    // ogni salvataggio riscrive la board intera. Vedi persist.js.
+    //
+    // Attenzione al soggetto: il persister scrive `this.current` NEL MOMENTO in
+    // cui parte, non quella di quando è stato programmato. Perciò ogni azione
+    // che cambia quale board è quella corrente — aprirne un'altra, cancellarla —
+    // deve prima svuotare la coda, altrimenti l'ultima modifica finirebbe
+    // scritta sulla board sbagliata o su una appena cancellata.
+    saveCurrent() {
+      this._writer().schedule()
+    },
+    flush() {
+      return this._writer().flush()
+    },
+    _writer() {
+      return persisterFor(this, () => {
+        if (!this.current) return
+        return window.api.boards.save(JSON.parse(JSON.stringify(this.current)))
+      })
     },
     setMode(mode) {
       this.mode = mode

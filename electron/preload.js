@@ -48,7 +48,10 @@ contextBridge.exposeInMainWorld('api', {
     }
   },
   log: {
-    write: (entry) => invoke('log:write', entry)
+    write: (entry) => invoke('log:write', entry),
+    // Torna il percorso salvato, o null se l'utente ha annullato.
+    export: () => invoke('log:export'),
+    path: () => invoke('log:path')
   },
   // Solo per la diagnostica: il renderer non può leggere process.env, ma il
   // battito di salute deve poter battere più in fretta durante un soak test

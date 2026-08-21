@@ -8,6 +8,7 @@ import PlayMode from './components/PlayMode.vue'
 import EditMode from './components/EditMode.vue'
 import ThemeEditor from './components/ThemeEditor.vue'
 import { startHealthHeartbeat } from './health'
+import { flushAll } from './stores/persist'
 import { t } from './i18n'
 
 const boards = useBoardsStore()
@@ -98,12 +99,31 @@ async function copyViewerLink() {
   }
 }
 
+// Export e import leggono e riscrivono i file su disco alle spalle degli store:
+// vanno fatti a coda vuota. Senza, si esporta lo stato di un quarto di secondo
+// fa, e un salvataggio ancora in attesa atterra SOPRA la roba appena importata.
 async function exportConfig() {
+  await flushAll()
   if (await window.api.config.export()) flashIoMsg(t('app.exported'))
+}
+
+// Il log della sessione, in un file solo e senza dover sapere dov'è.
+// Installato dal .deb sta in ~/.config/dnd-soundboard/data/logs/ — nascosta
+// dentro nascosta: chiedere all'utente di andarci a mano è il modo migliore
+// per non ricevere mai un log.
+async function exportLog() {
+  try {
+    const where = await window.api.log.export()
+    if (!where) return // annullato dall'utente
+    flashIoMsg(where === 'download' ? t('app.logDownloaded') : t('app.logSaved', { path: where }))
+  } catch (e) {
+    flashIoMsg(t('app.logFailed', { error: e.message }))
+  }
 }
 
 async function importConfig() {
   try {
+    await flushAll()
     const res = await window.api.config.import()
     if (!res) return
     await Promise.all([settings.load(), library.load(), boards.load()])
@@ -183,6 +203,7 @@ async function importConfig() {
       <ThemeEditor />
       <button :title="$t('app.exportTitle')" @click="exportConfig">{{ $t('app.export') }}</button>
       <button :title="$t('app.importTitle')" @click="importConfig">{{ $t('app.import') }}</button>
+      <button class="icon-only" :title="$t('app.exportLogTitle')" @click="exportLog">{{ $t('app.exportLog') }}</button>
 
       <div class="master">
         <span class="dim">{{ $t('app.master') }}</span>
@@ -235,6 +256,10 @@ async function importConfig() {
 .cast-error { color: var(--danger); }
 .cast { display: flex; align-items: center; gap: 6px; }
 .cast select { max-width: 160px; }
+/* La barra è già dichiaratamente affollata (vedi docs/known-limitations.md):
+   un comando che si usa una volta a stagione non può costarne quanto uno che
+   si usa a ogni scena. Solo l'icona, e stretto. */
+.toolbar .icon-only { padding: 10px 10px; line-height: 1; }
 .master { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .dim { color: var(--text-dim); font-size: 13px; }
 /* Stop All e Play/Edit non si stringono: sono i comandi che servono subito

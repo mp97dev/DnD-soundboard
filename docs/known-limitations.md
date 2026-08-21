@@ -139,11 +139,13 @@ outright.
 
 ### The toolbar is overloaded
 
-It holds eleven controls and wraps to two rows at 1280px. Nothing is clipped —
+It holds twelve controls and wraps to two rows at 1280px. Nothing is clipped —
 `flex-wrap` plus `flex-shrink: 0` on Stop All, Master and Play/Edit keeps every
 control reachable — but two rows costs vertical space that the grid could use.
 
-Export and Import are the obvious candidates to move into the library dialog.
+Export, Import and 🩺 *export log* are the obvious candidates to move into the
+library dialog: all three are used between sessions, not during one. 🩺 is
+already icon-only for that reason, but it is still a twelfth control.
 
 ### Dragging from the library to the grid still uses HTML5 drag-and-drop
 

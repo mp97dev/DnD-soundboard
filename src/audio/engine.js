@@ -70,6 +70,25 @@ function clamp01(v) {
   return Math.min(1, Math.max(0, v))
 }
 
+// Quanti secondi di audio sono già in memoria dopo il punto corrente.
+// el.buffered è una lista di intervalli, non uno solo: dopo un salto o una
+// ricostruzione ce ne sono più d'uno, e quello che conta è quello che CONTIENE
+// il punto in cui stiamo suonando — gli altri sono avanzi di prima.
+function bufferedAhead(el) {
+  try {
+    const t = el.currentTime
+    for (let i = 0; i < el.buffered.length; i++) {
+      if (el.buffered.start(i) <= t && t <= el.buffered.end(i)) {
+        return Math.round(el.buffered.end(i) - t)
+      }
+    }
+    return 0
+  } catch {
+    // buffered lancia InvalidStateError su un elemento già rilasciato
+    return null
+  }
+}
+
 // Interfaccia voice comune a buffer e stream, così fadeIn/fadeOutAndStop e i
 // canali (music/ambience) non devono sapere quale motore sta dietro:
 //   setVolume(v)          — immediato, v è il volume RELATIVO ALLA TRACCIA (0..1)
@@ -167,6 +186,14 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
   let state = 'idle'
   let currentTimeSaved = 0
   let rebuildAttempts = 0
+  // Contatori CUMULATIVI di quante volte l'elemento è rimasto senza dati.
+  // Cumulativi e non azzerati da chi legge: describe() è una fotografia e deve
+  // restare tale; a fare la differenza fra due battiti è src/health.js, che
+  // già tiene lo stato del battito precedente. Sono la misura che serve per
+  // rispondere a «la musica scatta quando il portatile è sotto sforzo?»:
+  // un conteggio per minuto, non un aneddoto.
+  let waitingCount = 0
+  let stalledCount = 0
   let stallTimer = null
   let rebuildTimer = null
   let stableTimer = null
@@ -242,12 +269,14 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
     mediaEl.addEventListener('waiting', () => {
       // Questi eventi possono scattare decine di volte al secondo durante un
       // rebuffering: throttle per non sommergere il log.
+      waitingCount += 1
       if (!rateLimited(`audio-waiting-${audioPath}`, 2000)) {
         logger.warn('evento waiting', { path: audioPath })
       }
       armStallTimer('waiting')
     }, { signal })
     mediaEl.addEventListener('stalled', () => {
+      stalledCount += 1
       if (!rateLimited(`audio-stalled-${audioPath}`, 2000)) {
         logger.warn('evento stalled', { path: audioPath })
       }
@@ -451,7 +480,15 @@ function makeStreamVoice(audioPath, { loop = false, volume = 1, trackId = null, 
         readyState: el.readyState, // <2: non ha abbastanza dati per suonare
         networkState: el.networkState, // 3: nessuna sorgente utilizzabile
         volume: Number(el.volume.toFixed(3)),
-        rebuilds: rebuildAttempts
+        rebuilds: rebuildAttempts,
+        waiting: waitingCount,
+        stalled: stalledCount,
+        // Secondi di audio già scaricati OLTRE il punto in cui siamo. È il
+        // margine che separa la riproduzione dal prossimo buco: un valore che
+        // resta basso dice che il buffer non si riempie mai abbastanza, cioè
+        // che la macchina o la rete non stanno al passo. Con lo scatto già
+        // avvenuto è tardi per misurarlo; questo lo vede arrivare.
+        bufferedAheadSec: bufferedAhead(el)
       }
     },
     // Non fa parte dell'interfaccia Voice "pubblica": serve solo al gestore

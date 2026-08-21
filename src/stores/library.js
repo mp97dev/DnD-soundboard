@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { persisterFor } from './persist'
 
 // Listener IPC registrato una sola volta anche se load() viene richiamato
 let progressBound = false
@@ -205,10 +206,20 @@ export const useLibraryStore = defineStore('library', {
         this.selectFolder(null)
       }
     },
-    async persist() {
-      // I Proxy reattivi non attraversano il contextBridge (structured clone):
-      // serializzazione esplicita prima di ogni chiamata IPC con dati dello store
-      await window.api.library.save({ tracks: clone(this.tracks), folders: clone(this.folders) })
+    // Raggruppata: lo slider del volume nel pannello proprietà passa da
+    // updateTrack a ogni @input, e ogni scrittura riversa TUTTO index.json —
+    // tracce, cartelle e tag compresi. Vedi persist.js.
+    persist() {
+      this._writer().schedule()
+    },
+    flush() {
+      return this._writer().flush()
+    },
+    _writer() {
+      return persisterFor(this, () =>
+        // I Proxy reattivi non attraversano il contextBridge (structured clone):
+        // serializzazione esplicita prima di ogni chiamata IPC con dati dello store
+        window.api.library.save({ tracks: clone(this.tracks), folders: clone(this.folders) }))
     },
 
     // ---- Coda di download ----

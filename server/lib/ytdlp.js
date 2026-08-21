@@ -6,6 +6,7 @@ const path = require('path')
 const fs = require('fs')
 const { DIRS, BIN_DIR } = require('./paths')
 const { maybeUpdate, friendlyError } = require('./ytdlp-update')
+const { shrinkThumbnail } = require('./thumbnails')
 
 // Cerca prima in ./bin (npm run fetch:ytdlp), poi nel PATH di sistema (apt)
 function binPath(name) {
@@ -18,11 +19,15 @@ function ytdlpPath() {
   return process.env.YTDLP_PATH || binPath('yt-dlp')
 }
 
+// ffmpeg bundled in ./bin se presente, altrimenti quello di sistema
+function ffmpegBin() {
+  const ffmpeg = path.join(BIN_DIR, 'ffmpeg')
+  return fs.existsSync(ffmpeg) ? ffmpeg : 'ffmpeg'
+}
+
 function baseArgs() {
   const args = []
-  // ffmpeg bundled in ./bin se presente, altrimenti yt-dlp usa quello di sistema
-  const ffmpeg = path.join(BIN_DIR, 'ffmpeg')
-  if (fs.existsSync(ffmpeg)) args.push('--ffmpeg-location', BIN_DIR)
+  if (fs.existsSync(path.join(BIN_DIR, 'ffmpeg'))) args.push('--ffmpeg-location', BIN_DIR)
   return args
 }
 
@@ -189,7 +194,11 @@ async function doDownloadTrack({ url, ytId, base, onProgress, job }) {
       '-o', path.join(DIRS.thumbnails, ytId),
       url
     ], null, job)
-    if (fs.existsSync(path.join(DIRS.thumbnails, `${ytId}.jpg`))) {
+    const thumbAbs = path.join(DIRS.thumbnails, `${ytId}.jpg`)
+    if (fs.existsSync(thumbAbs)) {
+      // YouTube la dà a 1280x720; sui bottoni e in libreria si vede a una
+      // frazione di quella misura. Vedi server/lib/thumbnails.js.
+      await shrinkThumbnail(thumbAbs, ffmpegBin())
       thumbnailPath = `library/thumbnails/${ytId}.jpg`
     }
   } catch (e) {
@@ -261,7 +270,11 @@ async function doDownloadVisual({ url, ytId, base, onProgress, job }) {
       '-o', path.join(DIRS.thumbnails, ytId),
       url
     ], null, job)
-    if (fs.existsSync(path.join(DIRS.thumbnails, `${ytId}.jpg`))) {
+    const thumbAbs = path.join(DIRS.thumbnails, `${ytId}.jpg`)
+    if (fs.existsSync(thumbAbs)) {
+      // YouTube la dà a 1280x720; sui bottoni e in libreria si vede a una
+      // frazione di quella misura. Vedi server/lib/thumbnails.js.
+      await shrinkThumbnail(thumbAbs, ffmpegBin())
       thumbnailPath = `library/thumbnails/${ytId}.jpg`
     }
   } catch (e) {

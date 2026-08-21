@@ -3,7 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const { spawn } = require('child_process')
-const { DIRS, LIBRARY_INDEX, DATA_DIR } = require('../paths')
+const { DIRS, LIBRARY_INDEX, DATA_DIR, ffmpegPath } = require('../paths')
 const { readSettings, writeSettings } = require('./settings')
 
 // Riapre i dialog di import dove si era arrivati l'ultima volta. Se la cartella
@@ -16,15 +16,6 @@ function lastImportDir(key) {
 
 function rememberImportDir(key, filePaths) {
   if (filePaths.length) writeSettings({ [key]: path.dirname(filePaths[0]) })
-}
-
-// ffmpeg bundled (extraResource / ./bin in dev) o nel PATH di sistema
-function ffmpegPath() {
-  const dir = app.isPackaged
-    ? path.join(process.resourcesPath, 'bin')
-    : path.join(__dirname, '..', '..', 'bin')
-  const bin = path.join(dir, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
-  return fs.existsSync(bin) ? bin : 'ffmpeg'
 }
 
 // Thumbnail per i video importati da file locale (best effort): un frame a

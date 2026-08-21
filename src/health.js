@@ -29,9 +29,16 @@ function mutedVoices(voices, previous) {
   return voices.filter((v) => {
     if (v.state !== 'playing') return false
     if (v.paused) return true
-    const before = previous.get(v.trackId)
+    const before = previous.get(v.trackId)?.currentTime
     return before !== undefined && v.currentTime === before
   })
+}
+
+// I contatori dell'engine sono cumulativi: quello che dice se la sessione sta
+// peggiorando è quanti ne sono arrivati IN QUESTO MINUTO. Le voci nate dopo
+// l'ultimo battito non hanno un precedente e contano per intero.
+function sinceLast(voices, previous, key) {
+  return voices.reduce((n, v) => n + (v[key] ?? 0) - (previous.get(v.trackId)?.[key] ?? 0), 0)
 }
 
 export function startHealthHeartbeat({ intervalMs = DEFAULT_INTERVAL_MS, extra = () => ({}) } = {}) {
@@ -42,7 +49,12 @@ export function startHealthHeartbeat({ intervalMs = DEFAULT_INTERVAL_MS, extra =
     try {
       const { ctxState, sampleRate, voices } = engine.health
       const muted = mutedVoices(voices, previous)
-      previous = new Map(voices.map((v) => [v.trackId, v.currentTime]))
+      const buchi = sinceLast(voices, previous, 'waiting') + sinceLast(voices, previous, 'stalled')
+      previous = new Map(voices.map((v) => [v.trackId, v]))
+
+      // Il margine più sottile fra tutte le voci vive: se una sola sta per
+      // restare a secco, è quella che si sentirà scattare.
+      const margini = voices.map((v) => v.bufferedAheadSec).filter((s) => typeof s === 'number')
 
       const fields = {
         uptimeMin: Math.round((Date.now() - startedAt) / 60000),
@@ -51,10 +63,22 @@ export function startHealthHeartbeat({ intervalMs = DEFAULT_INTERVAL_MS, extra =
         sampleRate,
         voices: voices.length,
         rebuilds: voices.reduce((n, v) => n + v.rebuilds, 0),
+        // Quante volte l'audio è rimasto senza dati dall'ultimo battito. Zero
+        // per tutta la sessione = la macchina sta al passo; qualche decina in
+        // un minuto = è lì che è andata storta, con l'orario accanto.
+        buchi,
+        bufferMinSec: margini.length ? Math.min(...margini) : null,
+        // La scheda in secondo piano cambia le regole del browser (timer
+        // rallentati, priorità più bassa): va saputo prima di dare la colpa
+        // all'app. 'hidden' accanto a dei buchi è mezza risposta.
+        scheda: typeof document !== 'undefined' ? document.visibilityState : null,
         ...extra()
       }
 
-      if (muted.length || ctxState !== 'running') {
+      // Un minuto con dei buchi entra fra le righe da guardare anche se
+      // nessuna voce è morta: è il sintomo che l'utente sente, e senza questo
+      // resterebbe un numero in mezzo a una riga info come tutte le altre.
+      if (muted.length || buchi || ctxState !== 'running') {
         logger.warn('battito: audio non in salute', {
           ...fields,
           muti: muted.length,
@@ -68,6 +92,15 @@ export function startHealthHeartbeat({ intervalMs = DEFAULT_INTERVAL_MS, extra =
       logger.warn('battito fallito', { message: err.message })
     }
   }
+
+  // Di che macchina stiamo parlando, una volta sola. Su un portatile a due
+  // core del 2012 con dieci schede aperte accanto, la risposta a «perché
+  // scatta» può essere semplicemente questa riga.
+  logger.info('ambiente renderer', {
+    cpuLogiche: navigator.hardwareConcurrency ?? null,
+    ramGB: navigator.deviceMemory ?? null, // solo Chromium, e arrotondato in giù
+    userAgent: navigator.userAgent
+  })
 
   beat() // una riga di partenza subito: dà il livello base da confrontare
   const timer = setInterval(beat, intervalMs)
