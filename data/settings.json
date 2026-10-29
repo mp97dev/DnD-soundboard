@@ -2,5 +2,12 @@
   "version": 1,
   "masterVolume": 0.73,
   "musicTransition": "crossfade",
-  "transitionDuration": 3000
+  "transitionDuration": 3000,
+  "castDeviceHost": null,
+  "castDeviceName": null,
+  "theme": "candela",
+  "customTheme": null,
+  "locale": "en",
+  "lastImportDirAudio": null,
+  "lastImportDirVisual": null
 }

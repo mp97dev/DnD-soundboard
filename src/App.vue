@@ -7,6 +7,7 @@ import { usePlaybackStore } from './stores/playback'
 import PlayMode from './components/PlayMode.vue'
 import EditMode from './components/EditMode.vue'
 import ThemeEditor from './components/ThemeEditor.vue'
+import ViewerLink from './components/ViewerLink.vue'
 import { startHealthHeartbeat } from './health'
 import { flushAll } from './stores/persist'
 import { t } from './i18n'
@@ -83,20 +84,6 @@ function flashIoMsg(text) {
   ioMsg.value = text
   clearTimeout(ioMsgTimer)
   ioMsgTimer = setTimeout(() => { ioMsg.value = '' }, 5000)
-}
-
-async function copyViewerLink() {
-  try {
-    const url = await window.api.cast.viewerUrl()
-    try {
-      await navigator.clipboard.writeText(url)
-      flashIoMsg(t('app.viewerCopied', { url }))
-    } catch {
-      flashIoMsg(t('app.viewerUrl', { url }))
-    }
-  } catch (e) {
-    flashIoMsg(t('app.viewerUnavailable', { error: e.message }))
-  }
 }
 
 // Export e import leggono e riscrivono i file su disco alle spalle degli store:
@@ -199,7 +186,7 @@ async function importConfig() {
           @click="playback.stopCast()"
         >✕</button>
       </div>
-      <button :title="$t('app.viewerLink')" @click="copyViewerLink">📱</button>
+      <ViewerLink />
       <ThemeEditor />
       <button :title="$t('app.exportTitle')" @click="exportConfig">{{ $t('app.export') }}</button>
       <button :title="$t('app.importTitle')" @click="importConfig">{{ $t('app.import') }}</button>

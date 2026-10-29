@@ -72,19 +72,65 @@ function listDevices() {
 // ---- IP LAN ----
 // L'URL del media va costruito con l'IP della macchina sulla LAN: localhost
 // per il Chromecast è sé stesso.
-function lanIp() {
-  const ifaces = os.networkInterfaces()
+//
+// Su Windows le interfacce virtuali sono la norma, non l'eccezione: Hyper-V e
+// WSL (vEthernet, 172.x), VirtualBox host-only (192.168.56.1), VMware (VMnet1/8,
+// 192.168.x.1). Prendere il primo 192.168 dava spesso proprio uno di questi, e
+// la TV/il telefono non lo raggiungono. Due correttivi:
+// 1. l'IP che il sistema usa per la rotta di default: un socket UDP "connesso"
+//    a un indirizzo pubblico non spedisce nulla, ma fa scegliere al kernel
+//    l'interfaccia d'uscita, che è quella della rete vera;
+// 2. in mancanza (PC offline, rotta su VPN), i nomi d'interfaccia virtuali
+//    vanno in fondo alla classifica.
+const dgram = require('dgram')
+
+const VIRTUAL_IFACE = /vethernet|hyper-v|wsl|virtualbox|vbox|vmware|vmnet|docker|br-|virbr|veth|tailscale|zerotier|wireguard|^(tun|tap|utun|wg)\d|npcap|loopback|bluetooth/i
+
+const isPrivate = (a) =>
+  a.startsWith('192.168.') || a.startsWith('10.') || /^172\.(1[6-9]|2\d|3[01])\./.test(a)
+
+let routeIp = null
+function refreshRouteIp() {
+  let sock
+  try {
+    sock = dgram.createSocket('udp4')
+  } catch {
+    return
+  }
+  const close = () => { try { sock.close() } catch { /* già chiusa */ } }
+  // Nessuna rete: connect fallisce (ENETUNREACH) e routeIp resta l'ultimo noto
+  sock.on('error', close)
+  sock.connect(53, '8.8.8.8', () => {
+    try { routeIp = sock.address().address } catch { /* socket già chiusa */ }
+    close()
+  })
+}
+refreshRouteIp()
+
+function lanCandidates() {
   const candidates = []
-  for (const list of Object.values(ifaces)) {
+  for (const [name, list] of Object.entries(os.networkInterfaces())) {
     for (const i of list || []) {
-      if (i.family === 'IPv4' && !i.internal) candidates.push(i.address)
+      if (i.family === 'IPv4' && !i.internal) candidates.push({ name, address: i.address })
     }
   }
-  // Preferisce le classi private "domestiche" (192.168, 10.) rispetto a
-  // interfacce virtuali (docker, WSL) che la TV non raggiunge
-  const score = (a) => (a.startsWith('192.168.') ? 0 : a.startsWith('10.') ? 1 : 2)
+  return candidates
+}
+
+function lanIp() {
+  const candidates = lanCandidates()
+  // Rinfresca per la prossima chiamata: la rete può cambiare (Wi-Fi diverso)
+  // e il risultato del connect arriva comunque in modo asincrono
+  refreshRouteIp()
+  const route = candidates.find((c) => c.address === routeIp)
+  if (route && isPrivate(route.address) && !VIRTUAL_IFACE.test(route.name)) return route.address
+
+  const score = ({ name, address }) =>
+    (VIRTUAL_IFACE.test(name) ? 10 : 0) +
+    (address.startsWith('169.254.') ? 20 : 0) + // link-local: nessun DHCP, inutile
+    (address.startsWith('192.168.') ? 0 : address.startsWith('10.') ? 1 : isPrivate(address) ? 2 : 3)
   candidates.sort((a, b) => score(a) - score(b))
-  return candidates[0] || null
+  return candidates[0]?.address || null
 }
 
 // ---- Sessione di cast ----
